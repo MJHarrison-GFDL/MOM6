@@ -133,6 +133,8 @@ use MOM_offline_transport,         only : limit_mass_flux_3d, update_h_horizonta
 use MOM_offline_transport,         only : distribute_residual_uh_barotropic, distribute_residual_vh_barotropic
 use MOM_offline_transport,         only : distribute_residual_uh_upwards, distribute_residual_vh_upwards
 use MOM_tracer_diabatic,           only : applyTracerBoundaryFluxesInOut
+use oda_driver_mod,                only : init_oda, oda, ODA_control_struct
+
 
 implicit none ; private
 
@@ -383,7 +385,8 @@ type, public :: MOM_control_struct
   type(sponge_CS),               pointer :: sponge_CSp             => NULL()
   type(ALE_sponge_CS),           pointer :: ALE_sponge_CSp         => NULL()
   type(ALE_CS),                  pointer :: ALE_CSp                => NULL()
-  type(offline_transport_CS),    pointer :: offline_CSp             => NULL()
+  type(offline_transport_CS),    pointer :: offline_CSp            => NULL()
+  type(DA_control_struct),       pointer :: DA_CSp                 => NULL()  
 
   ! These are used for group halo updates.
   type(group_pass_type) :: pass_tau_ustar_psurf
@@ -1956,6 +1959,7 @@ subroutine initialize_MOM(Time, param_file, dirs, CS, Time_in, offline_tracer_mo
   logical :: symmetric         ! If true, use symmetric memory allocation.
   logical :: save_IC           ! If true, save the initial conditions.
   logical :: do_unit_tests     ! If true, call unit tests.
+  logical :: enable_da         ! If true, enable data assimilation calls
   logical :: test_grid_copy = .false.
   logical :: use_ice_shelf     ! Needed for ALE
   logical :: global_indexing   ! If true use global horizontal index values instead
@@ -2253,7 +2257,11 @@ subroutine initialize_MOM(Time, param_file, dirs, CS, Time_in, offline_tracer_mo
                     fail_if_missing=.true.)
   endif
 
+  call get_param(param_file, "MOM", "ENABLE_DA", enable_da, &
+                 "If true, enable ocean data assimilation calls", default=.false.)
 
+  if (enable_da) allocate(CS%ODA_CSp)
+  
   call callTree_waypoint("MOM parameters read (initialize_MOM)")
 
   ! Set up the model domain and grids.
@@ -2707,11 +2715,19 @@ subroutine initialize_MOM(Time, param_file, dirs, CS, Time_in, offline_tracer_mo
   endif
   if (CS%split) deallocate(eta)
 
+  call get_param(param_file, "MOM", "DO_UNIT_TESTS", do_unit_tests, default=.false.)
+
+  if (associated(CS%ODA_CSp)) &
+     call init_oda(Time, G%Domain%mpp_domain, G, CS%tv, CS%h, CS%ODA_CSp)
+
   ! Flag whether to save initial conditions in finish_MOM_initialization() or not.
   CS%write_IC = save_IC .and. &
                 .not.((dirs%input_filename(1:1) == 'r') .and. &
                       (LEN_TRIM(dirs%input_filename) == 1))
 
+
+
+  
   ! Undocumented parameter: set DO_UNIT_TESTS=True to invoke unit_tests s/r
   ! which calls unit tests provided by some modules.
   call get_param(param_file, "MOM", "DO_UNIT_TESTS", do_unit_tests, default=.false.)
