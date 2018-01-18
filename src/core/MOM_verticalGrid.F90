@@ -4,6 +4,7 @@ module MOM_verticalGrid
 
 use MOM_error_handler, only : MOM_error, MOM_mesg, FATAL
 use MOM_file_parser, only : get_param, log_param, log_version, param_file_type
+use MOM_coms, only : PE_here, num_PEs, broadcast, get_PElist
 
 implicit none ; private
 
@@ -12,6 +13,7 @@ implicit none ; private
 public verticalGridInit, verticalGridEnd
 public setVerticalGridAxes
 public get_flux_units, get_thickness_units, get_tr_flux_units
+public broadcast_verticalGrid
 
 type, public :: verticalGrid_type
 
@@ -283,6 +285,66 @@ subroutine setVerticalGridAxes( Rlay, GV )
   endif
 
 end subroutine setVerticalGridAxes
+
+!> Broadcast the model's vertical grid structure to other PEs.
+subroutine broadcast_verticalGrid( GV )
+! Arguments: G - The ocean's grid structure.
+  type(verticalGrid_type), pointer :: GV   !< The ocean's vertical grid structure
+
+  integer :: n, nk
+  integer, dimension(:), allocatable :: pes
+  logical :: local
+  allocate(pes(0:num_PEs()-1))
+  call get_PElist(pes)
+  local = ALLOCATED(GV%sLayer)
+
+  do n=0,num_PEs()-1
+    call broadcast(GV%ke,pes(n))
+  enddo
+
+  if (local) then
+    print *,PE_here(),' sInterface allocated ',ALLOCATED(GV%sInterface)
+    print *,PE_here(),' sLayer allocated ',ALLOCATED(GV%sLayer)
+    print *,PE_here(),' gprime allocated ',ALLOCATED(GV%g_prime)
+    print *,PE_here(),' Rlay allocated ',ALLOCATED(GV%Rlay)
+  endif
+  nk=GV%ke
+  if (.not. local) then
+    ALLOC_( GV%sInterface(nk+1) ); GV%sInterface(:) = 0.0
+    ALLOC_( GV%sLayer(nk) ); GV%sLayer(:) = 0.0
+    ALLOC_( GV%g_prime(nk+1) ) ; GV%g_prime(:) = 0.0
+  ! The extent of Rlay should be changed to nk?
+    ALLOC_( GV%Rlay(nk+1) )    ; GV%Rlay(:) = 0.0
+  endif
+
+
+  print *,pe_here(),' in broadcastverticalGrid L309'
+
+  do n=0,num_PEs()-1
+    call broadcast(GV%max_depth,pes(n))
+    call broadcast(GV%g_earth,pes(n))
+    call broadcast(GV%Rho0,pes(n))
+!    call broadcast(trim(GV%zAxisUnits),len_trim(GV%zAxisUnits),PE_here(),pes(n))
+!    call broadcast(trim(GV%zAxisLongName),len_trim(GV%zAxisLongName),PE_here(),pes(n))
+    call broadcast(GV%Boussinesq,pes(n))
+    call broadcast(GV%direction,pes(n))
+    call broadcast(GV%Angstrom,pes(n))
+    call broadcast(GV%Angstrom_z,pes(n))
+    call broadcast(GV%H_subroundoff,pes(n))
+    call broadcast(GV%nkml,pes(n))
+    call broadcast(GV%nk_rho_varies,pes(n))
+    call broadcast(GV%kg_m2_to_H,pes(n))
+    call broadcast(GV%m_to_H,pes(n))
+    call broadcast(GV%H_to_m,pes(n))
+    call broadcast(GV%H_to_Pa,pes(n))
+    call broadcast(GV%g_prime,GV%ke+1,pes(n))
+!    call broadcast(GV%Rlay,GV%ke+1,pes(n))
+!    call broadcast(GV%sInterface,GV%ke+1,pes(n))
+!    call broadcast(GV%sLayer,GV%ke,pes(n))
+  enddo
+
+
+end subroutine broadcast_verticalGrid
 
 !> Deallocates the model's vertical grid structure.
 subroutine verticalGridEnd( GV )
