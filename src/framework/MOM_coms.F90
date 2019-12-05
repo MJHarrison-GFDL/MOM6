@@ -22,6 +22,7 @@ public :: EFP_plus, EFP_minus, EFP_to_real, real_to_EFP, EFP_real_diff
 public :: operator(+), operator(-), assignment(=)
 public :: query_EFP_overflow_error, reset_EFP_overflow_error
 public :: Set_PElist, Get_PElist
+
 !   This module provides interfaces to the non-domain-oriented communication
 ! subroutines.
 
