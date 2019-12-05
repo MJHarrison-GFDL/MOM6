@@ -350,7 +350,7 @@ type, public :: MOM_control_struct ; private
   type(offline_transport_CS),    pointer :: offline_CSp => NULL()
     !< Pointer to the offline tracer transport control structure
 
-  logical               :: ensemble_ocean !< if true, this run is part of a
+  logical               :: ensemble_DA !< if true, this run is part of a
                                 !! larger ensemble for the purpose of data assimilation
                                 !! or statistical analysis.
   type(ODA_CS), pointer :: odaCS => NULL() !< a pointer to the control structure for handling
@@ -822,7 +822,7 @@ subroutine step_MOM(forces, fluxes, sfc_state, Time_start, time_int_in, CS, &
     CS%p_surf_prev(i,j) = forces%p_surf(i,j)
   enddo ; enddo ; endif
 
-  if (CS%ensemble_ocean) then
+  if (CS%ensemble_DA) then
     ! update the time for the next analysis step if needed
     call set_analysis_time(CS%Time,CS%odaCS)
     ! store ensemble vector in odaCS
@@ -1162,8 +1162,8 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
 
   call enable_averages(dtdia, Time_end_thermo, CS%diag)
 
-  if (associated(CS%odaCS)) then
-    call apply_oda_tracer_increments(dtdia,G,tv,h,CS%odaCS)
+  if (CS%ensemble_DA) then
+    call apply_oda_tracer_increments(dtdia,Time_end_thermo,G,tv,h,CS%odaCS)
   endif
 
   if (update_BBL) then
@@ -1546,7 +1546,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   real    :: default_val       ! default value for a parameter
   logical :: write_geom_files  ! If true, write out the grid geometry files.
-  logical :: ensemble_ocean    ! If true, perform an ensemble gather at the end of step_MOM
   logical :: new_sim
   logical :: use_geothermal    ! If true, apply geothermal heating.
   logical :: use_EOS           ! If true, density calculated from T & S using an equation of state.
@@ -1923,8 +1922,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   endif
 
 
-  CS%ensemble_ocean=.false.
-  call get_param(param_file, "MOM", "ENSEMBLE_OCEAN", CS%ensemble_ocean, &
+  CS%ensemble_DA=.false.
+  call get_param(param_file, "MOM", "ENSEMBLE_DATA_ASSIMILATION", CS%ensemble_DA, &
                  "If False, The model is being run in serial mode as a single realization. "//&
                  "If True, The current model realization is part of a larger ensemble "//&
                  "and at the end of step MOM, we will perform a gather of the ensemble "//&
@@ -2463,8 +2462,8 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                 .not.((dirs%input_filename(1:1) == 'r') .and. &
                       (LEN_TRIM(dirs%input_filename) == 1))
 
-  if (CS%ensemble_ocean) then
-    call init_oda(Time, G, GV, CS%odaCS)
+  if (CS%ensemble_DA) then
+    call init_oda(Time, G, GV, US, CS%diag, CS%odaCS)
   endif
 
   !### This could perhaps go here instead of in finish_MOM_initialization?
