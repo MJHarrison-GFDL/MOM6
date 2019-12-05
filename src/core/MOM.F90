@@ -1163,7 +1163,7 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
   call enable_averages(dtdia, Time_end_thermo, CS%diag)
 
   if (associated(CS%odaCS)) then
-    call apply_oda_tracer_increments(US%T_to_s*dtdia,G,tv,h,CS%odaCS)
+    call apply_oda_tracer_increments(dtdia,G,tv,h,CS%odaCS)
   endif
 
   if (update_BBL) then
