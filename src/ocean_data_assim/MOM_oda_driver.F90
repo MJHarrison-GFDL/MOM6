@@ -1,30 +1,23 @@
 !> Interfaces for MOM6 ensembles and data assimilation.
 module MOM_oda_driver_mod
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! This is the top-level module for MOM6 ocean data assimilation.
-! It can be used to gather an ensemble of ocean states
-! before calling ensemble filter routines which calculate
-! increments based on cross-ensemble co-variance. It can also
-! be used to compare gridded model state variables to in-situ
-! observations without applying DA incrementa.
+! This is the top-level module for MOM6 ensemble or deterministic
+! ocean data assimilation routines.
 !
-! init_oda:  Initialize the ODA module
-! set_analysis_time : update time for performing next analysis
-! set_prior: Store prior model state
-! oda: call to filter
-! get_posterior : returns posterior increments (or full state) for the current ensemble member
+! These interfaces are available for online (concurrent MOM6 execution)
+! or offline use.  I/O interfaces are available for comparing gridded
+! model state variables to in-situ observations.
 !
-! Authors: Matthew.Harrison@noaa.gov
-!          Feiyu.Liu@noaa.gov and
-!          Tony.Rosati@noaa.gov
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! This file is part of MOM6. See LICENSE.md for the license.
+!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 ! This file is part of MOM6. see LICENSE.md for the license.
-use MOM_io,  only : open_namelist_file, close_file, check_nml_error
+use MOM_io,  only : open_namelist_file, close_file, check_nml_error, file_exists
 use MOM_error_handler, only : FATAL
 use MOM_error_handler, only : MOM_error
 use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
-use MOM_coms, only : Set_PElist
+use MOM_coms, only : Set_PElist, PE_here
 use mpp_domains_mod, only : domain2d, mpp_global_field, mpp_update_domains
 use mpp_domains_mod, only : mpp_get_compute_domain, mpp_get_data_domain
 use mpp_domains_mod, only : mpp_redistribute, mpp_broadcast_domain
@@ -38,12 +31,12 @@ use ensemble_manager_mod, only : get_ensemble_id, get_ensemble_size
 use ensemble_manager_mod, only : get_ensemble_pelist, get_ensemble_filter_pelist
 ! ODA Modules
 use ocean_da_types_mod, only : grid_type, ocean_profile_type, ocean_control_struct
-use ocean_da_core_mod, only : ocean_da_core_init, get_profiles, kd_root
+use ocean_da_core_mod, only : ocean_da_core_init, get_profiles, show_profiles, kd_root
+use ocean_da_core_mod, only : apply_forward_operator
 use ocean_da_types_mod, only : TEMP_ID, SALT_ID
 use ocean_da_types_mod, only : ODA_PFL, ODA_XBT, ODA_MRB, ODA_OISST
-#ifdef ENABLE_FILTER
-use eakf_oda_mod, only : ensemble_filter
-#endif
+! FILTER CODE
+use ocean_ensemble_filter_mod, only : ocean_ensemble_filter
 use write_ocean_obs_mod, only : open_profile_file
 use write_ocean_obs_mod, only : write_profile,close_profile_file
 use kdtree, only : kd_root !# JEDI
@@ -80,8 +73,11 @@ public :: set_analysis_time, oda, save_obs_diff, apply_oda_tracer_increments
 !> Control structure that contains tracer ids for temperature and salinity
 type :: INC_CS
    integer :: fldno = 0 !< integer field identification
-   integer :: T_id !< integer id for temperature
-   integer :: S_id !< integer id for salinity
+   integer :: T_id !< integer fms_time_interp id for temperature
+   integer :: S_id !< integer fms_time_interp id for salinity
+   integer :: SSH_id !< integer fms_time_interp id for sea surface height
+   integer :: U_id !< integer fms_time_interp id for zonal velocity
+   integer :: V_id !< integer fms_time_interp id for meridional velocity
 end type INC_CS
 
 !> Control structure that contains a transpose of the ocean state across ensemble members.
@@ -102,7 +98,7 @@ type, public :: ODA_CS ; private
   type(grid_type), pointer :: oda_grid              !< local tracer grid
   real, pointer, dimension(:,:,:) :: h => NULL()    !<layer thicknesses [H ~> m or kg m-2] for DA
   type(thermo_var_ptrs), pointer :: tv => NULL()    !< pointer to thermodynamic variables
-  type(thermo_var_ptrs), pointer :: tv_bc => NULL() !< pointer for thermodynamic variable bias adjustment
+  type(thermo_var_ptrs), pointer :: tv_fa => NULL() !< pointer for thermodynamic variable bias adjustment
   integer :: ni          !< global i-direction grid size
   integer :: nj          !< global j-direction grid size
   logical :: reentrant_x !< grid is reentrant in the x direction
@@ -125,12 +121,15 @@ type, public :: ODA_CS ; private
   type(remapping_CS) :: remapCS !< ALE control structure for remapping
   type(time_type) :: Time !< Current Analysis time
   type(diag_ctrl), pointer :: diag_cs => NULL() !<Diagnostics control structure
-  logical :: do_bias_correction !< setting this to true will enable bias adjustment
+  logical :: do_flux_adjustment !< setting this to true will enable bias adjustment
   real :: correction_multiplier !< non-dimensional factor for bias adjustment [nodim]
   logical :: write_obs !< setting this to true enables writing of profile misfits to file
-  integer :: id_inc_t !< integer ids for temperature increments
-  integer :: id_inc_s !< integer ids for salinity increments
-  type(INC_CS) :: INC_CS !< control structure containing field indices
+  integer :: id_inc_t !< integer diagnostic ids for temperature increments
+  integer :: id_inc_s !< integer diagnostic ids for salinity increments
+  integer :: id_inc_u !< integer diagnostic ids for zonal velocity increments
+  integer :: id_inc_v !< integer diagnostic ids for meridional velocity increments
+  type(INC_CS) :: INC_CS !< control structure containing field indices for applying increments
+                         !! from an external file. This is used if "do_flux_adjustment" is set to true.
 end type ODA_CS
 
 !> A structure with a pointer to a domain2d, to allow for the creation of arrays of pointers.
@@ -138,29 +137,26 @@ type :: ptr_mpp_domain
   type(domain2d), pointer :: mpp_domain => NULL() !< pointer to an mpp domain2d
 end type ptr_mpp_domain
 
-
   integer, parameter :: NO_FILTER = 0 !< No filter adjustments
   integer, parameter :: EAKF = 1 !< Use interfaces to GFDL ensemble adjustment filter
   integer :: id_clock_oda_init !< timer id for oda_init
   integer :: id_clock_oda_prior !< timer id for oda_prior
   integer :: id_clock_oda_filter !< timer id for oda_filter
   integer :: id_clock_oda_posterior !< timer id for oda_get_posterior
-  integer :: id_clock_bias_correction !< timer id for bias correction
+  integer :: id_clock_flux_adjustment !< timer id for bias correction
   integer :: id_clock_apply_increments !< timer id for oda_apply increments
-  integer :: temp_fid !< profile file handles for temperature
-  integer :: salt_fid !< profile file handles for salinity
-
-  real, parameter :: seconds_per_hour = 8.64e4 !< number of seconds per hour (s)
+  real, parameter :: seconds_per_hour = 3600. !< number of seconds per hour (s)
 
 contains
-!! initialize analysis grid and ODA-related variables
+!> initialize analysis grid and ODA-related variable
 !! information for all ensemble members
-  subroutine init_oda(Time, G, GV, US, diag_CS, CS)
+  subroutine init_oda(Time, G, GV, US, PF, diag_CS, CS)
 
     type(time_type), intent(in) :: Time !< The current model time.
     type(ocean_grid_type), pointer :: G !< domain and grid information for ocean model
     type(verticalGrid_type), intent(in) :: GV   !< The ocean's vertical grid structure
     type(unit_scale_type), pointer :: US !< unit scaling type
+    type(param_file_type), intent(in)  :: PF
     type(diag_ctrl), target, intent(inout) :: diag_CS !< diagnostic control structure
     type(ODA_CS), pointer :: CS                       !< ocean DA control structure
 
@@ -170,7 +166,7 @@ contains
     type(hor_index_type), pointer :: HI=> NULL()
     type(directories) :: dirs
     type(grid_type), pointer :: T_grid => NULL() !< global tracer grid
-    type(param_file_type) :: PF
+    type(grid_type), pointer :: T_grid_local => NULL() !< local tracer grid
     integer :: n, m, k, i, j, nk
     integer :: is,ie,js,je,isd,ied,jsd,jed
     integer :: stdout_unit, ioun, ierr, io_status
@@ -189,25 +185,21 @@ contains
     !---- namelist with default values
     logical :: write_obs = .false.
     character(len=80) :: obs_file
-    logical :: do_bias_correction = .false.
-    character(len=80) :: bias_correction_file
+    logical :: do_flux_adjustment = .false.
+    character(len=80) :: flux_adjustment_file
     real :: correction_multiplier = 1.0
-    namelist /oda_init_nml/ write_obs, obs_file, do_bias_correction, bias_correction_file, correction_multiplier
+    namelist /oda_init_nml/ write_obs, obs_file, do_flux_adjustment, flux_adjustment_file, correction_multiplier
 
     if (associated(CS)) call MOM_error(FATAL,'Calling oda_init with associated control structure')
     allocate(CS)
-
     ioun = open_namelist_file()
     read(UNIT=ioun, NML=oda_init_nml, IOSTAT=io_status)
     ierr = check_nml_error(io_status,'oda_init_nml')
     call close_file(ioun)
-    CS%do_bias_correction = do_bias_correction
+    CS%do_flux_adjustment = do_flux_adjustment
     CS%correction_multiplier = correction_multiplier
     CS%write_obs = write_obs
-
     CS%US => US
-    !! Use ens0 parameters, which is set up solely for the analysis grid
-    call get_MOM_input(PF,dirs,ensemble_num=0)
     call get_param(PF, "MOM", "ASSIM_METHOD", assim_method,  &
             "String which determines the data assimilation method" // &
             "Valid methods are: \'EAKF\' and \'NO_ASSIM\'", default='NO_ASSIM')
@@ -232,7 +224,6 @@ contains
     call get_param(PF, 'MOM', "INPUTDIR", inputdir)
     call get_param(PF, "MOM", "REMAPPING_SCHEME", remap_scheme, default="PPM_H4")
     inputdir = slasher(inputdir)
-
     select case(lowercase(trim(assim_method)))
     case('eakf')
         CS%assim_method = EAKF
@@ -241,7 +232,6 @@ contains
     case default
         call MOM_error(FATAL,'Invalid assimilation method provided')
     end select
-
     ens_info = get_ensemble_size()
     CS%ensemble_size = ens_info(1)
     npes_pm=ens_info(3)
@@ -251,10 +241,10 @@ contains
     call get_ensemble_pelist(CS%ensemble_pelist,'ocean')
     call get_ensemble_filter_pelist(CS%filter_pelist,'ocean')
     id_clock_apply_increments = cpu_clock_id('(ODA applying increments)')
-    id_clock_bias_correction = cpu_clock_id('(Bias correction through increments)')
+    id_clock_flux_adjustment = cpu_clock_id('(Bias correction through increments)')
     !! Switch to global ocean pelist
     call Set_PElist(CS%filter_pelist)
-    if(is_root_pe()) print *, 'Initialize ODA'
+    if(is_root_pe()) print *, 'Initialize ODA using filter PElist'
 
     id_clock_oda_init = cpu_clock_id('(ODA initialization)')
     id_clock_oda_prior = cpu_clock_id('(ODA setting prior)')
@@ -299,14 +289,12 @@ contains
     call init_ocean_ensemble(CS%Ocean_posterior,CS%Grid,CS%GV,CS%ensemble_size)
     allocate(CS%Ocean_increment)
     call init_ocean_ensemble(CS%Ocean_increment,CS%Grid,CS%GV,CS%ensemble_size)
-
     call get_param(PF, 'oda_driver', "REGRIDDING_COORDINATE_MODE", coord_mode, &
          "Coordinate mode for vertical regridding.", &
          default="ZSTAR", fail_if_missing=.false.)
     call initialize_regridding(CS%regridCS, CS%GV, US, dG%max_depth,PF,'oda_driver',coord_mode,'','')
     call initialize_remapping(CS%remapCS,remap_scheme)
-    call set_regrid_params(CS%regridCS, min_thickness=0.)
-
+    call set_regrid_params(CS%regridCS, min_thickness=0.0*US%m_to_Z)
     ! get domain indices from model domain decomposition
     isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
     if(.not. associated(CS%h)) then
@@ -318,13 +306,10 @@ contains
     ! increments are stored in z* and model domain decomposition
     allocate(CS%tv%T(isd:ied,jsd:jed,CS%GV%ke)); CS%tv%T(:,:,:)=0.0
     allocate(CS%tv%S(isd:ied,jsd:jed,CS%GV%ke)); CS%tv%S(:,:,:)=0.0
-
     ! get domain indices from analysis domain decomposition
     isd = CS%Grid%isd; ied = CS%Grid%ied; jsd = CS%Grid%jsd; jed = CS%Grid%jed
-    allocate(CS%oda_grid) ! local grid information needed from analysis
-    CS%oda_grid%x => CS%Grid%geolonT
-    CS%oda_grid%y => CS%Grid%geolatT
-
+    allocate(CS%oda_grid)
+    call set_up_local_grid(CS%oda_grid, CS, US)
     ! get basin flag from file
     call get_param(PF, 'oda_driver', "BASIN_FILE", basin_file, &
             "A file in which to find the basin masks, in variable 'basin'.", &
@@ -332,33 +317,35 @@ contains
     basin_file = trim(inputdir) // trim(basin_file)
     allocate(CS%oda_grid%basin_mask(isd:ied,jsd:jed))
     CS%oda_grid%basin_mask(:,:) = 0.0
-    call MOM_read_data(basin_file,'basin',CS%oda_grid%basin_mask,CS%Grid%domain, timelevel=1)
-
+    if (file_exists(basin_file)) then
+       call MOM_read_data(basin_file,'basin',CS%oda_grid%basin_mask,CS%Grid%domain, timelevel=1)
+    else
+       CS%oda_grid%basin_mask=CS%Grid%Mask2dT
+    endif
     ! set up diag variables for analysis increments
     CS%diag_cs => diag_CS
     CS%id_inc_t=register_diag_field('ocean_model','temp_increment',diag_CS%axesTL,&
             Time,'ocean potential temperature increments','degC')
     CS%id_inc_s=register_diag_field('ocean_model','salt_increment',diag_CS%axesTL,&
-            Time,'ocean salinity increments','psu')
-
+         Time,'ocean salinity increments','psu')
+    CS%id_inc_u=register_diag_field('ocean_model','u_increment',diag_CS%axesTL,&
+         Time,'ocean zonal velocity increments','m s-2')
+    CS%id_inc_v=register_diag_field('ocean_model','v_increment',diag_CS%axesTL,&
+            Time,'ocean meridional velocity increments','m s-2')
     !!  get global grid information from ocean model needed for ODA initialization
-    call set_up_global_tgrid(T_grid, CS, G)
-
-    call ocean_da_core_init(CS%mpp_domain, T_grid, CS%Profiles, Time)
-
+    call set_up_global_tgrid(T_grid,CS, G, PF, US)
+    call ocean_da_core_init(CS%mpp_domain, T_grid, CS%oda_grid, CS%Profiles, Time,CS%kdroot)
     !! Set the initial assimilation time
     CS%Time=Time
     !CS%Time=increment_time(Time,CS%assim_frequency*seconds_per_hour)
-
     deallocate(T_grid)
-    !deallocate(h)
     call cpu_clock_end(id_clock_oda_init)
     !! switch back to ensemble member pelist
     call Set_PElist(CS%ensemble_pelist(CS%ensemble_id,:))
-
-    if (CS%do_bias_correction) then
+    !! flux adjustment only implemented for temperature and salintiy
+    if (CS%do_flux_adjustment) then
       call time_interp_external_init()
-      inc_file = trim(inputdir) // trim(bias_correction_file)
+      inc_file = trim(inputdir) // trim(flux_adjustment_file)
       CS%INC_CS%T_id = init_external_field(inc_file, "temp_increment", &
               correct_leap_year_inconsistency=.true.,verbose=.true.,domain=G%Domain%mpp_domain)
       CS%INC_CS%S_id = init_external_field(inc_file, "salt_increment", &
@@ -366,17 +353,12 @@ contains
       fld_sz = get_external_field_size(CS%INC_CS%T_id)
       CS%INC_CS%fldno = 2
       if (CS%nk .ne. fld_sz(3)) call MOM_error(FATAL,'Increment levels /= ODA levels')
-
       isd = G%isd; ied = G%ied; jsd = G%jsd; jed = G%jed
-      allocate(CS%tv_bc)     ! storage for increment
-      allocate(CS%tv_bc%T(isd:ied,jsd:jed,CS%GV%ke)); CS%tv_bc%T(:,:,:)=0.0
-      allocate(CS%tv_bc%S(isd:ied,jsd:jed,CS%GV%ke)); CS%tv_bc%S(:,:,:)=0.0
+      allocate(CS%tv_fa)     ! storage for increment
+      allocate(CS%tv_fa%T(isd:ied,jsd:jed,CS%GV%ke)); CS%tv_fa%T(:,:,:)=0.0
+      allocate(CS%tv_fa%S(isd:ied,jsd:jed,CS%GV%ke)); CS%tv_fa%S(:,:,:)=0.0
     endif
 
-    if (CS%write_obs) then
-       temp_fid = open_profile_file("temp_"//trim(obs_file))
-       salt_fid = open_profile_file("salt_"//trim(obs_file))
-    end if
 
 end subroutine init_oda
 
@@ -397,30 +379,30 @@ subroutine set_prior_tracer(Time, G, GV, h, tv, CS)
     real, dimension(SZI_(G),SZJ_(G),SZK_(CS%Grid)) :: S
 
     !! return if not time for analysis
-    if (Time < CS%Time .or. .not. associated(CS) .or. CS%assim_method .eq. NO_FILTER) return
+!    if (Time < CS%Time .or. .not. associated(CS) .or. CS%assim_method .eq. NO_FILTER) return
+    if (Time < CS%Time .or. .not. associated(CS)) return
 
     if (.not. ASSOCIATED(CS%Grid)) call MOM_ERROR(FATAL,'ODA_CS ensemble horizontal grid not associated')
     if (.not. ASSOCIATED(CS%GV)) call MOM_ERROR(FATAL,'ODA_CS ensemble vertical grid not associated')
 
-    !! switch to global pelist
     call set_PElist(CS%filter_pelist)
     call cpu_clock_begin(id_clock_oda_prior)
-    if(is_root_pe()) print *, 'Setting prior'
 
-    T = 0.0; S = 0.0
     isc=G%isc; iec=G%iec; jsc=G%jsc; jec=G%jec
     do j=jsc,jec; do i=isc,iec
+      T(i,j,:)=0.0
       call remapping_core_h(CS%remapCS, GV%ke, h(i,j,:), tv%T(i,j,:), &
            CS%nk, CS%h(i,j,:), T(i,j,:))
+      S(i,j,:)=0.0
       call remapping_core_h(CS%remapCS, GV%ke, h(i,j,:), tv%S(i,j,:), &
            CS%nk, CS%h(i,j,:), S(i,j,:))
     enddo; enddo
 
     do m=1,CS%ensemble_size
       call mpp_redistribute(CS%domains(m)%mpp_domain, T,&
-           CS%mpp_domain, CS%Ocean_prior%T(:,:,:,m), complete=.true.)
+           CS%mpp_domain, CS%Ocean_prior%T(:,:,:,m))
       call mpp_redistribute(CS%domains(m)%mpp_domain, S,&
-           CS%mpp_domain, CS%Ocean_prior%S(:,:,:,m), complete=.true.)
+           CS%mpp_domain, CS%Ocean_prior%S(:,:,:,m))
     enddo
 
     do m=1,CS%ensemble_size
@@ -429,7 +411,6 @@ subroutine set_prior_tracer(Time, G, GV, h, tv, CS)
     enddo
 
     call cpu_clock_end(id_clock_oda_prior)
-    !! switch back to ensemble member pelist
     call Set_PElist(CS%ensemble_pelist(CS%ensemble_id,:))
 
     return
@@ -452,19 +433,17 @@ subroutine get_posterior_tracer(Time, CS, h, tv, increment)
 
     !! return if not analysis time (retain pointers for h and tv)
     if (Time < CS%Time .or. CS%assim_method .eq. NO_FILTER) return
-
     !! switch to global pelist
     call Set_PElist(CS%filter_pelist)
-
     call cpu_clock_begin(id_clock_oda_posterior)
-    if(is_root_pe()) print *, 'Getting posterior'
-    if( present(h) .and. .not. associated(h) ) h => CS%h ! Get analysis thickness
-
+    !! NOTE: This seems dangerous.
+    if( present(h)) then
+       if (.not. associated(h)) h => CS%h ! Get analysis thickness
+    endif
     !! Calculate and redistribute increments to CS%tv right after assimilation
     !! Retain CS%tv to calculate increments for IAU updates CS%tv_inc otherwise
     get_inc = .true.
     if(present(increment)) get_inc = increment
-
     if(get_inc) then
       CS%Ocean_increment%T = CS%Ocean_posterior%T - CS%Ocean_prior%T
       CS%Ocean_increment%S = CS%Ocean_posterior%S - CS%Ocean_prior%S
@@ -481,14 +460,15 @@ subroutine get_posterior_tracer(Time, CS, h, tv, increment)
                 CS%domains(m)%mpp_domain, CS%tv%T, complete=.true.)
         call mpp_redistribute(CS%mpp_domain, CS%Ocean_posterior%S(:,:,:,m), &
                 CS%domains(m)%mpp_domain, CS%tv%S, complete=.true.)
-        if(present(tv)) tv => CS%tv
+        if(present(tv)) then
+           if (.not. associated(tv)) tv => CS%tv
+        endif
       endif
     end do
 
     call cpu_clock_end(id_clock_oda_posterior)
     !! switch back to ensemble member pelist
     call Set_PElist(CS%ensemble_pelist(CS%ensemble_id,:))
-
     call mpp_update_domains(CS%tv%T, CS%domains(CS%ensemble_id)%mpp_domain)
     call mpp_update_domains(CS%tv%S, CS%domains(CS%ensemble_id)%mpp_domain)
 
@@ -497,89 +477,114 @@ subroutine get_posterior_tracer(Time, CS, h, tv, increment)
 
 end subroutine get_posterior_tracer
 
-  subroutine get_bias_correction_tracer(Time, CS)
-    type(time_type), intent(in) :: Time !< the current model time
-    type(ODA_CS), pointer :: CS !< ocean DA control structure
+subroutine get_flux_adjust_tracer(Time, CS)
+  type(time_type), intent(in) :: Time !< the current model time
+  type(ODA_CS), pointer :: CS !< ocean DA control structure
 
-    integer :: i,j,k
-    real, allocatable, dimension(:,:,:) :: T_bias, S_bias
-    real, allocatable, dimension(:,:,:) :: mask_z
-    real, allocatable, dimension(:), target :: z_in, z_edges_in
-    real :: missing_value
-    integer,dimension(3) :: fld_sz
+  integer :: i,j,k
+  real, allocatable, dimension(:,:,:) :: T_bias, S_bias
+  real, allocatable, dimension(:,:,:) :: mask_z
+  real, allocatable, dimension(:), target :: z_in, z_edges_in
+  real :: missing_value
+  integer,dimension(3) :: fld_sz
 
-    if(is_root_pe()) print *, 'Getting bias correction'
+  !if(is_root_pe()) print *, 'Getting bias correction'
 
-    call cpu_clock_begin(id_clock_bias_correction)
-    call horiz_interp_and_extrap_tracer(CS%INC_CS%T_id,Time,1.0,CS%G,T_bias,&
+  call cpu_clock_begin(id_clock_flux_adjustment)
+  call horiz_interp_and_extrap_tracer(CS%INC_CS%T_id,Time,1.0,CS%G,T_bias,&
+       mask_z,z_in,z_edges_in,missing_value,.true.,.false.,.false.,.true.)
+  call horiz_interp_and_extrap_tracer(CS%INC_CS%S_id,Time,1.0,CS%G,S_bias,&
             mask_z,z_in,z_edges_in,missing_value,.true.,.false.,.false.,.true.)
-    call horiz_interp_and_extrap_tracer(CS%INC_CS%S_id,Time,1.0,CS%G,S_bias,&
-            mask_z,z_in,z_edges_in,missing_value,.true.,.false.,.false.,.true.)
 
-    fld_sz=shape(T_bias)
-    do i=1,fld_sz(1)
-       do j=1,fld_sz(2)
-          do k=1,fld_sz(3)
-             if (T_bias(i,j,k) .gt. 1.0E-3) T_bias(i,j,k) = 0.0
-             if (S_bias(i,j,k) .gt. 1.0E-3) S_bias(i,j,k) = 0.0
-          enddo
-       enddo
+  fld_sz=shape(T_bias)
+
+  do k=1,fld_sz(3)
+    do j=1,fld_sz(2)
+      do i=1,fld_sz(1)
+        if (T_bias(i,j,k) .gt. 1.0E-3) T_bias(i,j,k) = 0.0
+        if (S_bias(i,j,k) .gt. 1.0E-3) S_bias(i,j,k) = 0.0
+      enddo
     enddo
+  enddo
 
-    CS%tv_bc%T = T_bias * CS%correction_multiplier
-    CS%tv_bc%S = S_bias * CS%correction_multiplier
+  CS%tv_fa%T(:,:,:) = T_bias(:,:,:) * CS%correction_multiplier
+  CS%tv_fa%S(:,:,:) = S_bias(:,:,:) * CS%correction_multiplier
 
-    call mpp_update_domains(CS%tv_bc%T, CS%domains(CS%ensemble_id)%mpp_domain)
-    call mpp_update_domains(CS%tv_bc%S, CS%domains(CS%ensemble_id)%mpp_domain)
+  call mpp_update_domains(CS%tv_fa%T, CS%domains(CS%ensemble_id)%mpp_domain)
+  call mpp_update_domains(CS%tv_fa%S, CS%domains(CS%ensemble_id)%mpp_domain)
 
-    call cpu_clock_end(id_clock_bias_correction)
+  call cpu_clock_end(id_clock_flux_adjustment)
 
-  end subroutine get_bias_correction_tracer
+end subroutine get_flux_adjust_tracer
 
 !> Gather observations and sall ODA routines
 subroutine oda(Time, CS)
     type(time_type), intent(in) :: Time   !< time type
     type(ODA_CS), pointer :: CS           !< ocean DA control structure
+    type(ocean_profile_type), pointer :: CProf=>NULL()
+    type(ocean_profile_type), pointer :: Prof=>NULL()
 
     integer :: i, j
     integer :: m
     integer :: yr, mon, day, hr, min, sec
 
     if ( Time >= CS%Time .and. associated(CS) ) then
-
-      if ( CS%assim_method > NO_FILTER) then
-
-        !! switch to global pelist
-        call Set_PElist(CS%filter_pelist)
-        call cpu_clock_begin(id_clock_oda_filter)
-
-        !! get profiles for current assimilation step
-        call get_profiles(Time, CS%Profiles, CS%CProfiles)
-#ifdef ENABLE_FILTER
-        call ensemble_filter(CS%Ocean_prior, CS%Ocean_posterior, CS%CProfiles, CS%kdroot, CS%mpp_domain, CS%oda_grid)
-#endif
-        call cpu_clock_end(id_clock_oda_filter)
-
-        if (CS%write_obs) call save_obs_diff(CS%CProfiles)
-        !! switch back to ensemble member pelist
-        call Set_PElist(CS%ensemble_pelist(CS%ensemble_id,:))
-
-        call get_posterior_tracer(Time, CS, increment=.true.)
-
-      endif
-
-      if (CS%do_bias_correction) call get_bias_correction_tracer(Time, CS)
-
+       call Set_PElist(CS%filter_pelist)
+       call cpu_clock_begin(id_clock_oda_filter)
+       call get_profiles(Time, CS%Profiles,CS%CProfiles)
+       print *,'calling ensemble filter'
+       call show_profiles(CS%CProfiles,current=.true.)
+       call ocean_ensemble_filter(CS%Ocean_prior, CS%Ocean_posterior, CS%CProfiles, CS%kdroot, CS%mpp_domain, CS%oda_grid)
+       print *,'computing first guess difference'
+       call first_guess_difference(CS, CS%CProfiles)
+       call cpu_clock_end(id_clock_oda_filter)
+       print *,'calling write_obs'
+       if (CS%write_obs) call save_obs_diff(CS%CProfiles)
+       call Set_PElist(CS%ensemble_pelist(CS%ensemble_id,:))
+       print *,'calling get posterior'
+       call get_posterior_tracer(Time, CS, increment=.true.)
+      if (CS%do_flux_adjustment) call get_flux_adjust_tracer(Time, CS)
     end if
 
     return
 end subroutine oda
 
+!< Return the ensemble average first guess difference
+subroutine first_guess_difference(CS, Profiles)
+  type(oda_CS), pointer :: CS
+  type(ocean_profile_type), pointer :: Profiles !< pointer to profile type
+  type(ocean_profile_type), pointer :: Prof=>NULL()
+  integer :: n
+  integer :: i0,j0,m,k0,k,k1
+  integer :: max_levels=1000
+  real :: frac_cell !< non-dimensional fractional distance between cell centers
+  Prof=>Profiles
+
+  if (.not. associated(Profiles)) then
+     print *,' first_guess_difference: Profiles not associated!'
+     return
+  endif
+
+  do while (associated(Prof%cprev))
+    Prof=>Prof%cprev
+  enddo
+
+  do while (associated(Prof))
+    if (.not. associated(Prof%obs_def)) then
+       call MOM_error(FATAL,'Forward operator not assigned for profile')
+    endif
+    print *,'Applying forward operator'
+    call apply_forward_operator(Prof,CS%Ocean_prior)
+    Prof=>Prof%cnext
+  enddo
+
+
+end subroutine first_guess_difference
+
 !> Finalize DA module
 subroutine oda_end(CS)
-  type(ODA_CS), intent(inout) :: CS !< the ocean DA control structure
-  call close_profile_file(temp_fid)
-  call close_profile_file(salt_fid)
+  type(ODA_CS), pointer :: CS !< the ocean DA control structure
+  deallocate(CS)
 end subroutine oda_end
 
 !> Initialize DA module
@@ -611,13 +616,12 @@ subroutine set_analysis_time(Time,CS)
 
   if (Time >= CS%Time) then
     CS%Time=increment_time(CS%Time,CS%assim_frequency*int(seconds_per_hour))
-
-    call get_date(Time, yr, mon, day, hr, min, sec)
-    write(mesg,*) 'Model Time: ', yr, mon, day, hr, min, sec
-    call MOM_mesg("set_analysis_time: "//trim(mesg))
-    call get_date(CS%time, yr, mon, day, hr, min, sec)
-    write(mesg,*) 'Assimilation Time: ', yr, mon, day, hr, min, sec
-    call MOM_mesg("set_analysis_time: "//trim(mesg))
+    !call get_date(Time, yr, mon, day, hr, min, sec)
+    !write(mesg,*) 'Model Time: ', yr, mon, day, hr, min, sec
+    !call MOM_mesg("set_analysis_time: "//trim(mesg))
+    !call get_date(CS%time, yr, mon, day, hr, min, sec)
+    !write(mesg,*) 'Assimilation Time: ', yr, mon, day, hr, min, sec
+    !call MOM_mesg("set_analysis_time: "//trim(mesg))
   endif
   if (CS%Time < Time) then
     call MOM_error(FATAL, " set_analysis_time: " // &
@@ -632,15 +636,16 @@ end subroutine set_analysis_time
 subroutine save_obs_diff(profiles)
   type(ocean_profile_type), pointer :: profiles      !< pointer to profile type
   type(ocean_profile_type), pointer :: Prof=>NULL()
+
+  if (.not. associated(profiles)) return
   Prof=>profiles
+  do while (associated(Prof%cprev))
+    Prof=>Prof%cprev
+  enddo
 
   do while (associated(Prof))
-    if(Prof%compute .and. Prof%inst_type .eq. ODA_PFL) then
-       if(Prof%variable .eq. TEMP_ID) then
-          call write_profile(temp_fid,Prof)
-       elseif(Prof%variable .eq. SALT_ID) then
-          call write_profile(salt_fid,Prof)
-       endif
+    if(Prof%compute .and. Prof%accepted) then
+       call write_profile(Prof)
     endif
     Prof=>Prof%cnext
   enddo
@@ -671,18 +676,18 @@ subroutine apply_oda_tracer_increments(dt,Time_end,G,tv,h,CS)
     real :: missing_value
 
     if (.not. associated(CS)) return
-    if (CS%assim_method .eq. NO_FILTER .and. (.not. CS%do_bias_correction)) return
+    if (CS%assim_method .eq. NO_FILTER .and. (.not. CS%do_flux_adjustment)) return
 
     call cpu_clock_begin(id_clock_apply_increments)
 
     T_inc = 0.0; S_inc = 0.0; T = 0.0; S = 0.0
     if (CS%assim_method > 0 ) then
-      T = T + CS%tv%T
-      S = S + CS%tv%S
+       T(:,:,:) = T(:,:,:) + CS%tv%T(:,:,:)
+       S(:,:,:) = S(:,:,:) + CS%tv%S(:,:,:)
     endif
-    if (CS%do_bias_correction ) then
-      T = T + CS%tv_bc%T
-      S = S + CS%tv_bc%S
+    if (CS%do_flux_adjustment ) then
+       T(:,:,:) = T(:,:,:) + CS%tv_fa%T(:,:,:)
+       S(:,:,:) = S(:,:,:) + CS%tv_fa%S(:,:,:)
     endif
 
     isc=G%isc; iec=G%iec; jsc=G%jsc; jec=G%jec
@@ -693,28 +698,20 @@ subroutine apply_oda_tracer_increments(dt,Time_end,G,tv,h,CS)
               G%ke, h(i,j,:), S_inc(i,j,:))
     enddo; enddo
 
-    !missing_value = get_external_field_missing(CS%INC_CS%T_id)
-    !do k = 1,G%ke
-       !call myStats(T_inc(:,:,k),missing_value,1,G%ied,1,G%jed,k,'Applied T increments')
-    !enddo
-    !do k = 1,G%ke
-       !call myStats(S_inc(:,:,k),missing_value,1,G%ied,1,G%jed,k,'Applied S increments')
-    !enddo
-
     call mpp_update_domains(T_inc, G%Domain%mpp_domain)
     call mpp_update_domains(S_inc, G%Domain%mpp_domain)
-
     tv%T(isc:iec,jsc:jec,:)=tv%T(isc:iec,jsc:jec,:)+T_inc(isc:iec,jsc:jec,:)*dt*CS%US%T_to_s
     tv%S(isc:iec,jsc:jec,:)=tv%S(isc:iec,jsc:jec,:)+S_inc(isc:iec,jsc:jec,:)*dt*CS%US%T_to_s
-
     call mpp_update_domains(tv%T, G%Domain%mpp_domain)
     call mpp_update_domains(tv%S, G%Domain%mpp_domain)
 
     call enable_averaging(dt, Time_end, CS%diag_cs)
     if (CS%id_inc_t > 0) call post_data(CS%id_inc_t, T_inc, CS%diag_cs)
     if (CS%id_inc_s > 0) call post_data(CS%id_inc_s, S_inc, CS%diag_cs)
+! TBD:
+!    if (CS%id_inc_u > 0) call post_data(CS%id_inc_u, U_inc, CS%diag_cs)
+!    if (CS%id_inc_v > 0) call post_data(CS%id_inc_v, V_inc, CS%diag_cs)
     call disable_averaging(CS%diag_cs)
-
     call diag_update_remap_grids(CS%diag_cs)
     call cpu_clock_end(id_clock_apply_increments)
 
@@ -722,31 +719,39 @@ subroutine apply_oda_tracer_increments(dt,Time_end,G,tv,h,CS)
 
 end subroutine apply_oda_tracer_increments
 
-  subroutine set_up_global_tgrid(T_grid, CS, G)
+  subroutine set_up_global_tgrid(T_grid, CS, G, PF, US)
     type(grid_type), pointer :: T_grid      !< global tracer grid
     type(ODA_CS), pointer, intent(in) :: CS !< ocean DA control structure
     type(ocean_grid_type), pointer :: G     !< domain and grid information for ocean model
-
+    type(param_file_type), intent(in)  :: PF  !< param file type
+    type(unit_scale_type), optional, intent(in) :: US !< A dimensional unit scaling type
     ! local variables
     real, dimension(:,:), allocatable :: global2D, global2D_old
     integer :: i, j, k
+    real :: min_thickness=1.0 ! minimum thickness on analysis grid
+    real :: z_to_m, m_to_z ! dimensional rescaling factors
+
+    m_to_z = 1.0; if (present(US)) m_to_z = US%m_to_Z
+    z_to_m = 1.0; if (present(US)) z_to_m = US%z_to_M
+    min_thickness = min_thickness*m_to_Z
 
     if(.not. associated(T_grid)) allocate(T_grid)
     T_grid%ni = CS%ni
     T_grid%nj = CS%nj
     T_grid%nk = CS%nk
+    call get_param(PF, "MOM", "TRIPOLAR_N", T_grid%tripolar_N, &
+                 "Use tripolar connectivity at the northern edge of the "//&
+                 "domain.  With TRIPOLAR_N, NIGLOBAL must be even.", &
+                 default=.false.)
 
     allocate(T_grid%x(CS%ni,CS%nj))
     call mpp_global_field(CS%mpp_domain, CS%Grid%geolonT, T_grid%x)
     allocate(T_grid%y(CS%ni,CS%nj))
     call mpp_global_field(CS%mpp_domain, CS%Grid%geolatT, T_grid%y)
-
     allocate(T_grid%basin_mask(CS%ni,CS%nj))
     call mpp_global_field(CS%mpp_domain, CS%oda_grid%basin_mask, T_grid%basin_mask)
-
     allocate(T_grid%bathyT(CS%ni,CS%nj))
     call mpp_global_field(CS%domains(CS%ensemble_id)%mpp_domain, G%bathyT, T_grid%bathyT)
-
     allocate(T_grid%mask(CS%ni,CS%nj,CS%nk));   T_grid%mask(:,:,:) = 0.0
     allocate(T_grid%z(CS%ni,CS%nj,CS%nk));      T_grid%z(:,:,:) = 0.0
     allocate(global2D(CS%ni,CS%nj))
@@ -755,7 +760,7 @@ end subroutine apply_oda_tracer_increments
     do k = 1, CS%nk
       call mpp_global_field(CS%domains(CS%ensemble_id)%mpp_domain, CS%h(:,:,k), global2D)
       do i=1, CS%ni; do j=1, CS%nj
-        if ( global2D(i,j) > 1 ) then
+        if ( global2D(i,j) > min_thickness ) then
           T_grid%mask(i,j,k) = 1.0
         end if
       end do; end do
@@ -771,19 +776,49 @@ end subroutine apply_oda_tracer_increments
     deallocate(global2D_old)
   end subroutine set_up_global_tgrid
 
+  subroutine set_up_local_grid(lgrid, CS, US)
+    type(grid_type), pointer :: lgrid      !< local tracer grid
+    type(ODA_CS), pointer, intent(in) :: CS !< ocean DA control structure
+    type(unit_scale_type), optional, intent(in) :: US !< A dimensional unit scaling type
+    ! local variables
+    integer :: i, j, k
+    integer :: isd,ied,jsd,jed
+    real :: min_thickness=1.0 ! minimum thickness on analysis grid
+    real :: z_to_m, m_to_z ! dimensional rescaling factors
+
+    ! get domain indices from analysis domain decomposition
+    isd = CS%Grid%isd; ied = CS%Grid%ied; jsd = CS%Grid%jsd; jed = CS%Grid%jed
+
+    m_to_z = 1.0; if (present(US)) m_to_z = US%m_to_Z
+    z_to_m = 1.0; if (present(US)) z_to_m = US%z_to_M
+    min_thickness = min_thickness*m_to_Z
+    if(.not. associated(lgrid)) allocate(lgrid)
+    lgrid%nk = CS%nk
+    lgrid%x => CS%Grid%geolonT
+    lgrid%y => CS%Grid%geolatT
+    lgrid%bathyT => CS%grid%bathyT
+
+    allocate(lgrid%mask(isd:ied,jsd:jed,CS%nk));   lgrid%mask(:,:,:) = 0.0
+    allocate(lgrid%z(isd:ied,jsd:jed,CS%nk));     lgrid%z(:,:,:) = 0.0
+
+    do k = 1, CS%nk
+      do i=isd,ied; do j=jsd,jed
+        if ( CS%h(i,j,k) > min_thickness ) then
+          lgrid%mask(i,j,k) = 1.0
+        end if
+        if (k .eq. 1) then
+           lgrid%z(i,j,k) = 0.5*CS%h(i,j,1)
+        else
+           lgrid%z(i,j,k) = lgrid%z(i,j,k-1) + 0.5*(CS%h(i,j,k) + CS%h(i,j,k-1))
+        end if
+      enddo; enddo
+    end do
+  end subroutine set_up_local_grid
+
 !> \namespace MOM_oda_driver_mod
 !!
 !! \section section_ODA The Ocean data assimilation (DA) and Ensemble Framework
 !!
-!! The DA framework implements ensemble capability in MOM6.   Currently, this framework
-!! is enabled using the cpp directive ENSEMBLE_OCEAN.  The ensembles need to be generated
-!! at the level of the calling routine for oda_init or above. The ensemble instances may
-!! exist on overlapping or non-overlapping processors. The ensemble information is accessed
-!! via the FMS ensemble manager. An independent PE layout is used to gather (prior) ensemble
-!! member information where this information is stored in the ODA control structure.  This
-!! module was developed in collaboration with Feiyu Lu and Tony Rosati in the GFDL prediction
-!! group for use in their coupled ensemble framework. These interfaces should be suitable for
-!! interfacing MOM6 to other data assimilation packages as well.
 
 
 end module MOM_oda_driver_mod

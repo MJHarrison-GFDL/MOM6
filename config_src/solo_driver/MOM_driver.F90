@@ -63,7 +63,7 @@ program MOM_main
   use MOM_write_cputime,   only : write_cputime_start_clock, write_cputime_CS
 
   use ensemble_manager_mod, only : ensemble_manager_init, get_ensemble_size
-  use ensemble_manager_mod, only : ensemble_pelist_setup
+  use ensemble_manager_mod, only : ensemble_pelist_setup, get_ensemble_id
   use mpp_mod, only : set_current_pelist => mpp_set_current_pelist
   use time_interp_external_mod, only : time_interp_external_init
 
@@ -208,6 +208,7 @@ program MOM_main
 
   integer :: ocean_nthreads = 1
   integer :: ncores_per_node = 36
+  integer :: ensemble_id = 1
   logical :: use_hyper_thread = .false.
   integer :: omp_get_num_threads,omp_get_thread_num,get_cpu_affinity,adder,base_cpu
   namelist /ocean_solo_nml/ date_init, calendar, months, days, hours, minutes, seconds,&
@@ -224,13 +225,16 @@ program MOM_main
   ! configurations, this all occurs in the external driver.
   call ensemble_manager_init() ; ensemble_info(:) =  get_ensemble_size()
   ensemble_size=ensemble_info(1) ; nPEs_per=ensemble_info(2)
-  if (ensemble_size > 1) then ! There are multiple ensemble members.
-    allocate(ocean_pelist(nPEs_per))
-    call ensemble_pelist_setup(.true., 0, nPEs_per, 0, 0, atm_pelist, ocean_pelist, &
-                               land_pelist, ice_pelist)
-    call set_current_pelist(ocean_pelist)
-    deallocate(ocean_pelist)
-  endif
+!  if (ensemble_size > 1) then ! There are multiple ensemble members.
+  allocate(ocean_pelist(nPEs_per))
+  call ensemble_pelist_setup(.true., 0, nPEs_per, 0, 0, atm_pelist, ocean_pelist, &
+       land_pelist, ice_pelist)
+  call set_current_pelist(ocean_pelist)
+!  allocate(ensemble_pelist(1:ensemble_size,1:nPEs_per))
+!  call get_ensemble_pelist(ensemble_pelist)
+  ensemble_id = get_ensemble_id()
+  deallocate(ocean_pelist)
+!  endif
 
   ! These clocks are on the global pelist.
   initClock = cpu_clock_id( 'Initialization' )
@@ -308,14 +312,14 @@ program MOM_main
     Time = segment_start_time
     call initialize_MOM(Time, Start_time, param_file, dirs, MOM_CSp, restart_CSp, &
                         segment_start_time, offline_tracer_mode=offline_tracer_mode, &
-                        diag_ptr=diag, tracer_flow_CSp=tracer_flow_CSp)
+                        diag_ptr=diag, tracer_flow_CSp=tracer_flow_CSp,ensemble_number=ensemble_id)
   else
     ! In this case, the segment starts at a time read from the MOM restart file
     ! or left as Start_time by MOM_initialize.
     Time = Start_time
     call initialize_MOM(Time, Start_time, param_file, dirs, MOM_CSp, restart_CSp, &
                         offline_tracer_mode=offline_tracer_mode, diag_ptr=diag, &
-                        tracer_flow_CSp=tracer_flow_CSp)
+                        tracer_flow_CSp=tracer_flow_CSp,ensemble_number=ensemble_id)
   endif
 
   call get_MOM_state_elements(MOM_CSp, G=grid, GV=GV, US=US, C_p=fluxes%C_p)

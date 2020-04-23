@@ -350,12 +350,12 @@ type, public :: MOM_control_struct ; private
   type(offline_transport_CS),    pointer :: offline_CSp => NULL()
     !< Pointer to the offline tracer transport control structure
 
-  logical               :: ensemble_DA !< if true, this run is part of a
-                                !! larger ensemble for the purpose of data assimilation
-                                !! or statistical analysis.
-  type(ODA_CS), pointer :: odaCS => NULL() !< a pointer to the control structure for handling
-                                !! ensemble model state vectors and data assimilation
-                                !! increments and priors
+  logical               :: ensemble_DA !< if this flag is set true, enable
+                                !! ensembles and/or data assimilation
+                                !! including first guess misfits.
+  type(ODA_CS), pointer :: odaCS => NULL() !< a pointer to the control structure for
+                                !! ensemble prior state vectors, data assimilation
+                                !! increments, and observations.
 end type MOM_control_struct
 
 public initialize_MOM, finish_MOM_initialization, MOM_end
@@ -1162,9 +1162,9 @@ subroutine step_MOM_thermo(CS, G, GV, US, u, v, h, tv, fluxes, dtdia, &
 
   call enable_averages(dtdia, Time_end_thermo, CS%diag)
 
-  if (CS%ensemble_DA) then
-    call apply_oda_tracer_increments(dtdia,Time_end_thermo,G,tv,h,CS%odaCS)
-  endif
+!  if (CS%ensemble_DA) then
+!    call apply_oda_tracer_increments(dtdia,Time_end_thermo,G,tv,h,CS%odaCS)
+!  endif
 
   if (update_BBL) then
     !   Calculate the BBL properties and store them inside visc (u,h).
@@ -1499,7 +1499,7 @@ end subroutine step_offline
 !! initializing the ocean state variables, and initializing subsidiary modules
 subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                           Time_in, offline_tracer_mode, input_restart_file, diag_ptr, &
-                          count_calls, tracer_flow_CSp)
+                          count_calls, tracer_flow_CSp,ensemble_number)
   type(time_type), target,   intent(inout) :: Time        !< model time, set in this routine
   type(time_type),           intent(in)    :: Time_init   !< The start time for the coupled model's calendar
   type(param_file_type),     intent(out)   :: param_file  !< structure indicating parameter file to parse
@@ -1520,6 +1520,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   logical,         optional, intent(in)    :: count_calls !< If true, nstep_tot counts the number of
                                                           !! calls to step_MOM instead of the number of
                                                           !! dynamics timesteps.
+  integer,         optional, intent(in)    :: ensemble_number
   ! local variables
   type(ocean_grid_type),  pointer :: G => NULL() ! A pointer to a structure with metrics and related
   type(hor_index_type)            :: HI  !  A hor_index_type for array extents
@@ -1528,7 +1529,7 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
   type(diag_ctrl),        pointer :: diag => NULL()
   type(unit_scale_type),  pointer :: US => NULL()
   character(len=4), parameter :: vers_num = 'v2.0'
-
+  integer :: ensemble_num = -999
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
 
@@ -1609,7 +1610,12 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   ! Read paths and filenames from namelist and store in "dirs".
   ! Also open the parsed input parameter file(s) and setup param_file.
-  call get_MOM_input(param_file, dirs, default_input_filename=input_restart_file)
+  if (PRESENT(ensemble_number)) then
+     call get_MOM_input(param_file, dirs, default_input_filename=input_restart_file,&
+          ensemble_num=ensemble_number)
+  else
+     call get_MOM_input(param_file, dirs, default_input_filename=input_restart_file)
+  endif
 
   verbosity = 2 ; call read_param(param_file, "VERBOSITY", verbosity)
   call MOM_set_verbosity(verbosity)
@@ -2409,6 +2415,10 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
     call register_diags_offline_transport(Time, CS%diag, CS%offline_CSp)
   endif
 
+  if (CS%ensemble_DA) then
+    call init_oda(Time, G, GV, US, param_file, CS%diag, CS%odaCS)
+  endif
+
   !--- set up group pass for u,v,T,S and h. pass_uv_T_S_h also is used in step_MOM
   call cpu_clock_begin(id_clock_pass_init)
   dynamics_stencil = min(3, G%Domain%nihalo, G%Domain%njhalo)
@@ -2462,9 +2472,6 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
                 .not.((dirs%input_filename(1:1) == 'r') .and. &
                       (LEN_TRIM(dirs%input_filename) == 1))
 
-  if (CS%ensemble_DA) then
-    call init_oda(Time, G, GV, US, CS%diag, CS%odaCS)
-  endif
 
   !### This could perhaps go here instead of in finish_MOM_initialization?
   ! call fix_restart_scaling(GV)
