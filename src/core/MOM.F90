@@ -1721,9 +1721,12 @@ subroutine initialize_MOM(Time, Time_init, param_file, dirs, CS, restart_CSp, &
 
   Start_time = Time ; if (present(Time_in)) Start_time = Time_in
 
-  ! Read paths and filenames from namelist and store in "dirs".
-  ! Also open the parsed input parameter file(s) and setup param_file.
-  call get_MOM_input(param_file, dirs, default_input_filename=input_restart_file)
+  ! Assuming that if the ice_shelf_CSp is present, then the calling
+  ! driver has previously opened the param_file .
+  if (.not. present(ice_shelf_CSp))&
+    ! Read paths and filenames from namelist and store in "dirs".
+    ! Also open the parsed input parameter file(s) and setup param_file.
+    call get_MOM_input(param_file, dirs, default_input_filename=input_restart_file)
 
   verbosity = 2 ; call read_param(param_file, "VERBOSITY", verbosity)
   call MOM_set_verbosity(verbosity)

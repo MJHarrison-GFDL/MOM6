@@ -319,7 +319,7 @@ program MOM_main
     call initialize_ice_shelf(param_file, grid, Time, ice_shelf_CSp, &
                               diag_IS, forces, fluxes, sfc_state)
   endif
-  call close_param_file(param_file)
+  !call close_param_file(param_file)
 
   if (sum(date) >= 0) then
     call initialize_MOM(Time, Start_time, param_file, dirs, MOM_CSp, restart_CSp, &
