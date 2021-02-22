@@ -256,11 +256,10 @@ subroutine init_oda(Time, G, GV, CS)
   allocate(CS%tv%S(isd:ied,jsd:jed,CS%GV%ke)); CS%tv%S(:,:,:)=0.0
   call set_axes_info(CS%Grid, CS%GV, CS%US, PF, CS%diag_cs, set_vertical=.true.)
   ! get domain extents for the analysis grid and use global indexing
-  !call get_domain_extent(CS%Grid%Domain,is,ie,js,je,isd,ied,jsd,jed,&
-  !                       isg,ieg,jsg,jeg,idg_offset,jdg_offset,symmetric)
-  !isd=isd+idg_offset; ied=ied+idg_offset
-  !jsd=jsd+jdg_offset; jed=jed+jdg_offset
-  !call mpp_get_data_domain(CS%mpp_domain,isd,ied,jsd,jed)
+  call get_domain_extent(CS%Grid%Domain,is,ie,js,je,isd,ied,jsd,jed,&
+                         isg,ieg,jsg,jeg,idg_offset,jdg_offset,symmetric)
+  isd=isd+idg_offset; ied=ied+idg_offset
+  jsd=jsd+jdg_offset; jed=jed+jdg_offset
   allocate(CS%oda_grid)
   CS%oda_grid%x => CS%Grid%geolonT
   CS%oda_grid%y => CS%Grid%geolatT
