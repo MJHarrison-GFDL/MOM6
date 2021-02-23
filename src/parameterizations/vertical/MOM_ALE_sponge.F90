@@ -90,7 +90,7 @@ end type p2d
 !> ALE sponge control structure
 type, public :: ALE_sponge_CS ; private
   integer :: nz        !< The total number of layers.
-  integer :: nz_data   !< The total number of arbritary layers (used by older code).
+  integer :: nz_data   !< The total number of arbritary layers (used for fixed sponges).
   integer :: isc       !< The starting i-index of the computational domain at h.
   integer :: iec       !< The ending i-index of the computational domain at h.
   integer :: jsc       !< The starting j-index of the computational domain at h.
@@ -765,6 +765,7 @@ subroutine set_up_ALE_sponge_vel_field_fixed(u_val, v_val, G, GV, u_ptr, v_ptr, 
 
   ! stores the reference profile
   allocate(CS%Ref_val_u%p(CS%nz_data,CS%num_col_u))
+  CS%Ref_val_u%nz_data=CS%nz_data
   CS%Ref_val_u%p(:,:) = 0.0
   do col=1,CS%num_col_u
     do k=1,CS%nz_data
@@ -773,6 +774,7 @@ subroutine set_up_ALE_sponge_vel_field_fixed(u_val, v_val, G, GV, u_ptr, v_ptr, 
   enddo
   CS%var_u%p => u_ptr
   allocate(CS%Ref_val_v%p(CS%nz_data,CS%num_col_v))
+  CS%Ref_val_v%nz_data=CS%nz_data
   CS%Ref_val_v%p(:,:) = 0.0
   do col=1,CS%num_col_v
     do k=1,CS%nz_data
