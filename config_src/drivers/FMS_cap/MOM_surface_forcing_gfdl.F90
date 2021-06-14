@@ -35,6 +35,7 @@ use MOM_string_functions, only : uppercase
 use MOM_spatial_means,    only : adjust_area_mean_to_zero
 use MOM_unit_scaling,     only : unit_scale_type
 use MOM_variables,        only : surface
+use MOM_EOS,              only : calculate_TFreeze
 use user_revise_forcing,  only : user_alter_forcing, user_revise_forcing_init
 use user_revise_forcing,  only : user_revise_forcing_CS
 use iso_fortran_env, only : int64
@@ -117,6 +118,10 @@ type, public :: surface_forcing_CS ; private
   logical :: adjust_net_fresh_water_to_zero !< Adjust net surface fresh-water (with restoring) to zero
   logical :: use_net_FW_adjustment_sign_bug !< Use the wrong sign when adjusting net FW
   logical :: adjust_net_fresh_water_by_scaling !< Adjust net surface fresh-water w/o moving zero contour
+  logical :: adjust_SST_restore_for_ice     !< If RESTORE_TEMP is True, modify the SST value under ice
+                                            !! accounting for haline suppression of the freezing point
+  logical :: adjust_SST_restore_for_ice_SPEAR !< If ADJUST_SST_RESTORE_FOR_ICE is True, use the
+                                            !! scheme used in SPEAR configurations (2019)
   logical :: mask_srestore_under_ice        !< If true, use an ice mask defined by frazil criteria
                                             !! for salinity restoring.
   real    :: ice_salt_concentration         !< Salt concentration for sea ice [kg/kg]
@@ -407,6 +412,20 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   if (CS%restore_temp) then
     call time_interp_external(CS%id_trestore, Time, data_restore)
     do j=js,je ; do i=is,ie
+      if (CS%adjust_SST_restore_for_ice) then
+        if (CS%adjust_SST_restore_for_ice_SPEAR) then
+          !! x1y added from Yongfei for considering ice freezing point with SSS
+          if (abs(data_restore(i,j)+1.8)<0.0001) &
+               data_restore(i,j) = -0.0539*sfc_state%SSS(i,j)
+        else
+!           if (data_restore(i,j) == CS%SST_restore_ice_mask_value) then
+!             call calculate_TFreeze(sfc_state%SSS(i,j),fluxes%psurf(i,j), data_restore(i,j), CS%EOS, &
+!                                    pres_scale=US%kg_m3_to_R*US%m_s_to_L_T**2)
+!           endif
+          call MPP_ERROR(FATAL,'convert_IOB_to_fluxes: option ADJUST_SST_RESTORE_FOR_ICE only'//&
+               ' supported with ADJUST_SST_RESTORE_FOR_ICE_SPEAR also set to True')
+        endif
+      endif
       delta_sst = data_restore(i,j)- sfc_state%SST(i,j)
       delta_sst = sign(1.0,delta_sst)*min(abs(delta_sst),CS%max_delta_trestore)
       fluxes%heat_added(i,j) = G%mask2dT(i,j) * CS%trestore_mask(i,j) * &
@@ -1304,6 +1323,18 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "If true, the coupled driver will add a  "//&
                  "heat flux that drives sea-surface temperature "//&
                  "toward specified values.", default=.false.)
+  if (CS%restore_temp) then
+    call get_param(param_file, mdl, "ADJUST_SST_RESTORE_FOR_ICE", CS%adjust_SST_restore_for_ice, &
+                 "If true, the restoring value under sea-ice is adjusted to the local  "//&
+                 "freezing point. ", default=.false.)
+    if (CS%adjust_sst_restore_for_ice) then
+      call get_param(param_file, mdl, "ADJUST_SST_RESTORE_FOR_ICE_SPEAR", CS%adjust_SST_restore_for_ice_SPEAR, &
+                 "If true, use the scheme used in the SPEAR configurations which are using a overly-simplified  "//&
+                 "freezing point calculation which should be replaced by a call to the model eqn of state. "//&
+                 , default=.false.)
+    endif
+  endif
+
   call get_param(param_file, mdl, "ADJUST_NET_SRESTORE_TO_ZERO", &
                  CS%adjust_net_srestore_to_zero, &
                  "If true, adjusts the salinity restoring seen to zero "//&
