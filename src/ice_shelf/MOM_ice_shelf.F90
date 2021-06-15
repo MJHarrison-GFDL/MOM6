@@ -1069,7 +1069,10 @@ subroutine add_shelf_flux(G, US, CS, sfc_state, fluxes)
       fluxes%sens(i,j) = frac_shelf*ISS%tflux_ocn(i,j)*CS%flux_factor + frac_open * fluxes%sens(i,j)
     ! The salt flux should be mostly from sea ice, so perhaps none should be intercepted and this should be changed.
     if (associated(fluxes%salt_flux)) &
-      fluxes%salt_flux(i,j) = frac_shelf * ISS%salt_flux(i,j)*CS%flux_factor + frac_open * fluxes%salt_flux(i,j)
+         fluxes%salt_flux(i,j) = frac_shelf * ISS%salt_flux(i,j)*CS%flux_factor + frac_open * fluxes%salt_flux(i,j)
+    ! remove mass from the ocean where frazil has occurred under cavity
+    if (allocated(sfc_state%frazil)) &
+       fluxes%lprec(i,j) = fluxes%lprec(i,j) - frac_shelf*sfc_state%frazil(i,j)/CS%Lat_fusion/CS%time_step
   endif ; enddo ; enddo
 
   if (CS%debug) then
