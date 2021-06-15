@@ -122,6 +122,8 @@ type, public :: surface_forcing_CS ; private
                                             !! accounting for haline suppression of the freezing point
   logical :: adjust_SST_restore_for_ice_SPEAR !< If ADJUST_SST_RESTORE_FOR_ICE is True, use the
                                             !! scheme used in SPEAR configurations (2019)
+  real    :: sst_restore_ice_mask_value     !< The SST value where sea-ice is present and should be replaced
+                                            !! with an appropriate freezing point temperature [degC]
   logical :: mask_srestore_under_ice        !< If true, use an ice mask defined by frazil criteria
                                             !! for salinity restoring.
   real    :: ice_salt_concentration         !< Salt concentration for sea ice [kg/kg]
@@ -1329,9 +1331,12 @@ subroutine surface_forcing_init(Time, G, US, param_file, diag, CS, wind_stagger)
                  "freezing point. ", default=.false.)
     if (CS%adjust_sst_restore_for_ice) then
       call get_param(param_file, mdl, "ADJUST_SST_RESTORE_FOR_ICE_SPEAR", CS%adjust_SST_restore_for_ice_SPEAR, &
-                 "If true, use the scheme used in the SPEAR configurations which are using a overly-simplified  "//&
+                 "If true, use the scheme used in the SPEAR configurations which are using an overly-simplified  "//&
                  "freezing point calculation which should be replaced by a call to the model eqn of state. "//&
                  , default=.false.)
+      call get_param(param_file, mdl, "SST_RESTORE_ICE_MASK_VALUE", CS%sst_restore_ice_mask_value, &
+                 "A sea-ice flagged value for SST .", units="degC", default=-1.9)
+
     endif
   endif
 
