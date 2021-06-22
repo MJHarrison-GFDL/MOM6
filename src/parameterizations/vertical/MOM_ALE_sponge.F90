@@ -1009,9 +1009,10 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
                                           answers_2018=CS%hor_regrid_answers_2018)
 
       call pass_var(sp_val,G%Domain)
+      call pass_var(mask_z,G%Domain)
       do j=CS%jsc,CS%jec; do I=CS%iscB,CS%iecB
         sp_val_u(I,j,1:nz_data) = 0.5*(sp_val(i,j,1:nz_data)+sp_val(i+1,j,1:nz_data))
-        mask_u(I,j,1:nz_data) = max(mask_z(i,j,1:nz_data),mask_z(i+1,j,1:nz_data))
+        mask_u(I,j,1:nz_data) = min(mask_z(i,j,1:nz_data),mask_z(i+1,j,1:nz_data))
       enddo ; enddo
 
       allocate( hsrc(nz_data) )
@@ -1056,9 +1057,10 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
                                           spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z,&
                                           answers_2018=CS%hor_regrid_answers_2018)
       call pass_var(sp_val,G%Domain)
+      call pass_var(mask_z,G%Domain)
       do J=CS%jscB,CS%jecB; do i=CS%isc,CS%iec
         sp_val_v(i,J,1:nz_data) = 0.5*(sp_val(i,j,1:nz_data)+sp_val(i,j+1,1:nz_data))
-        mask_v(i,J,1:nz_data) = max(mask_z(i,j,1:nz_data),mask_z(i,j+1,1:nz_data))
+        mask_v(i,J,1:nz_data) = min(mask_z(i,j,1:nz_data),mask_z(i,j+1,1:nz_data))
       enddo ; enddo
       !call pass_var(mask_z,G%Domain)
       allocate( hsrc(nz_data) )
