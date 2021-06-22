@@ -535,6 +535,13 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     call set_regrid_params(CS, min_thickness=0.)
   endif
 
+  if (coordinateMode(coord_mode) == REGRIDDING_ZSTAR) then
+    call get_param(param_file, mdl, "INFLATE_VANISHED_LAYERS_UNDER_ICE_SHELVES", tmpLogical, &
+                 "If true, then inflate two layers above and adjacent to first cropped cell  "//&
+                 "under ice shelf cavities.", default=.false.)
+    call set_regrid_params(CS,inflate_layers_under_shelves=tmpLogical)
+  endif
+
   if (coordinateMode(coord_mode) == REGRIDDING_SLIGHT) then
     ! Set SLight-specific regridding parameters.
     call get_param(param_file, mdl, "SLIGHT_DZ_SURFACE", dz_fixed_sfc, &
@@ -2208,7 +2215,8 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
              compress_fraction, ref_pressure, dz_min_surface, nz_fixed_surface, Rho_ML_avg_depth, &
              nlay_ML_to_interior, fix_haloclines, halocline_filt_len, &
              halocline_strat_tol, integrate_downward_for_e, remap_answers_2018, &
-             adaptTimeRatio, adaptZoom, adaptZoomCoeff, adaptBuoyCoeff, adaptAlpha, adaptDoMin, adaptDrho0)
+             adaptTimeRatio, adaptZoom, adaptZoomCoeff, adaptBuoyCoeff, adaptAlpha, adaptDoMin, adaptDrho0, &
+             inflate_layers_under_shelves)
   type(regridding_CS), intent(inout) :: CS !< Regridding control structure
   logical, optional, intent(in) :: boundary_extrapolation !< Extrapolate in boundary cells
   real,    optional, intent(in) :: min_thickness    !< Minimum thickness allowed when building the
@@ -2248,6 +2256,8 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
   real,    optional, intent(in) :: adaptDrho0       !< Reference density difference for stratification-dependent
                                                     !! diffusion. [R ~> kg m-3]
 
+  logical, optional, intent(in) :: inflate_layers_under_shelves !< If True, inflate 2 layers above and adjacent to first
+                                                             !! cropped interface.
   if (present(interp_scheme)) call set_interp_scheme(CS%interp_CS, interp_scheme)
   if (present(boundary_extrapolation)) call set_interp_extrap(CS%interp_CS, boundary_extrapolation)
 
@@ -2272,6 +2282,8 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
   select case (CS%regridding_scheme)
   case (REGRIDDING_ZSTAR)
     if (present(min_thickness)) call set_zlike_params(CS%zlike_CS, min_thickness=min_thickness)
+    if (present(inflate_layers_under_shelves)) call set_zlike_params(CS%zlike_CS, inflate_vanished_layers_under_shelves=&
+                                          inflate_layers_under_shelves)
   case (REGRIDDING_SIGMA_SHELF_ZSTAR)
     if (present(min_thickness)) call set_zlike_params(CS%zlike_CS, min_thickness=min_thickness)
   case (REGRIDDING_SIGMA)

@@ -19,6 +19,7 @@ type, public :: zlike_CS ; private
 
   !> Target coordinate resolution, usually in [Z ~> m]
   real, allocatable, dimension(:) :: coordinateResolution
+  logical :: inflate_vanished_layers_under_ice_shelves
 end type zlike_CS
 
 public init_coord_zlike, set_zlike_params, build_zstar_column, end_coord_zlike
@@ -50,13 +51,17 @@ subroutine end_coord_zlike(CS)
 end subroutine end_coord_zlike
 
 !> Set parameters in the zlike structure
-subroutine set_zlike_params(CS, min_thickness)
+subroutine set_zlike_params(CS, min_thickness, inflate_vanished_layers_under_shelves)
   type(zlike_CS), pointer    :: CS !< Coordinate control structure
   real, optional, intent(in) :: min_thickness !< Minimum allowed thickness [H ~> m or kg m-2]
+  logical, optional, intent(in) :: inflate_vanished_layers_under_shelves
 
   if (.not. associated(CS)) call MOM_error(FATAL, "set_zlike_params: CS not associated")
 
   if (present(min_thickness)) CS%min_thickness = min_thickness
+  CS%inflate_vanished_layers_under_ice_shelves = .false.
+  if (present(inflate_vanished_layers_under_shelves)) CS%inflate_vanished_layers_under_ice_shelves = &
+       inflate_vanished_layers_under_shelves
 end subroutine set_zlike_params
 
 !> Builds a z* coordinate with a minimum thickness
@@ -78,7 +83,8 @@ subroutine build_zstar_column(CS, depth, total_thickness, zInterface, &
   real :: eta   ! Free surface height [Z ~> m] or [H ~> m or kg m-2]
   real :: stretching ! A stretching factor for the coordinate [nondim]
   real :: dh, min_thickness, z0_top, z_star, z_scale ! Thicknesses or heights [Z ~> m] or [H ~> m or kg m-2]
-  integer :: k
+  real :: dhtop, min_thick_x2
+  integer :: k, k2
   logical :: new_zstar_def
 
   z_scale = 1.0 ; if (present(zScale)) z_scale = zScale
@@ -89,6 +95,7 @@ subroutine build_zstar_column(CS, depth, total_thickness, zInterface, &
   if (present(z_rigid_top)) then
     z0_top = z_rigid_top
     new_zstar_def = .true.
+    min_thick_x2 = 2.0*min_thickness
   endif
 
   ! Position of free-surface (or the rigid top, for which eta ~ z0_top)
@@ -119,6 +126,18 @@ subroutine build_zstar_column(CS, depth, total_thickness, zInterface, &
     enddo
     zInterface(CS%nk+1) = -depth
 
+    if (CS%inflate_vanished_layers_under_ice_shelves) then
+       do k=CS%nk-1,2,-1
+         dh = zInterface(k-1)-zInterface(k)
+         if (dh.lt.min_thick_x2) then
+            dhtop=zInterface(1)-zInterface(k+1) ! distance to the surface from the interface below
+            dh = 0.5*(dhtop-min_thickness*(k-2)) ! divide between two layers
+            zInterface(k)=zInterface(k+1)+dh
+            zInterface(k-1)=zInterface(k)+dh
+            exit
+         endif
+       enddo
+    endif
   else
     ! Integrate down from the top for a notional new grid, ignoring topography
     ! The starting position is offset by z0_top which, if z0_top<0, will place
