@@ -54,7 +54,8 @@ end subroutine end_coord_zlike
 subroutine set_zlike_params(CS, min_thickness, inflate_vanished_layers_under_shelves)
   type(zlike_CS), pointer    :: CS !< Coordinate control structure
   real, optional, intent(in) :: min_thickness !< Minimum allowed thickness [H ~> m or kg m-2]
-  logical, optional, intent(in) :: inflate_vanished_layers_under_shelves
+  logical, optional, intent(in) :: inflate_vanished_layers_under_shelves !< If true, add resolution near the surface
+                                                                         !! under ice shelf cavities.
 
   if (.not. associated(CS)) call MOM_error(FATAL, "set_zlike_params: CS not associated")
 
