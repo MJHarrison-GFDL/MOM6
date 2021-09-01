@@ -386,9 +386,6 @@ subroutine horiz_interp_and_extrap_tracer_record(filename, varnam,  conversion, 
   if (allocated(lon_in)) deallocate(lon_in)
   if (allocated(lat_in)) deallocate(lat_in)
   if (allocated(z_in)) deallocate(z_in)
-  if (allocated(z_edges_in)) deallocate(z_edges_in)
-  if (allocated(tr_z)) deallocate(tr_z)
-  if (allocated(mask_z)) deallocate(mask_z)
 
   allocate(lon_in(id), lat_in(jd), z_in(kd), z_edges_in(kd+1))
   allocate(tr_z(isd:ied,jsd:jed,kd), mask_z(isd:ied,jsd:jed,kd))
