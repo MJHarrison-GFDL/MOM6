@@ -903,8 +903,8 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
       call MOM_error(FATAL,"apply_ALE_sponge: No time information provided")
     do m=1,CS%fldno
       nz_data = CS%Ref_val(m)%nz_data
-      allocate(sp_val(G%isd:G%ied,G%jsd:G%jed,1:nz_data)); sp_val(:,:,:) = 0.0
-      allocate(mask_z(G%isd:G%ied,G%jsd:G%jed,1:nz_data)); mask_z(:,:,:) = 0.0
+!      allocate(sp_val(G%isd:G%ied,G%jsd:G%jed,1:nz_data)); sp_val(:,:,:) = 0.0
+!      allocate(mask_z(G%isd:G%ied,G%jsd:G%jed,1:nz_data)); mask_z(:,:,:) = 0.0
       call horiz_interp_and_extrap_tracer(CS%Ref_val(m)%id, Time, 1.0, G, sp_val, mask_z, z_in, &
                      z_edges_in,  missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
                      spongeOnGrid=CS%SpongeDataOngrid, m_to_Z=US%m_to_Z, &
@@ -991,14 +991,10 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
          call MOM_error(FATAL,"apply_ALE_sponge: No time information provided")
 
       nz_data = CS%Ref_val_u%nz_data
-      allocate(sp_val(G%isd:G%ied,G%jsd:G%jed,1:nz_data))
-      allocate(sp_val_u(G%isdB:G%iedB,G%jsd:G%jed,1:nz_data))
-      allocate(mask_u(G%isdB:G%iedB,G%jsd:G%jed,1:nz_data))
-      allocate(mask_z(G%isd:G%ied,G%jsd:G%jed,1:nz_data))
+!      allocate(sp_val(G%isd:G%ied,G%jsd:G%jed,1:nz_data))
+!      allocate(mask_z(G%isd:G%ied,G%jsd:G%jed,1:nz_data))
       sp_val(:,:,:) = 0.0
-      sp_val_u(:,:,:) = 0.0
-      mask_u(:,:,:) = 0.0
-      mask_z(:,:,:) = 0.0
+
       ! Interpolate from the external horizontal grid and in time
       call horiz_interp_and_extrap_tracer(CS%Ref_val_u%id, Time, 1.0, G, sp_val, mask_z, z_in, &
                                           z_edges_in, missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
@@ -1007,6 +1003,12 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
 
       call pass_var(sp_val, G%Domain)
       call pass_var(mask_z, G%Domain)
+
+      allocate(sp_val_u(G%isdB:G%iedB,G%jsd:G%jed,1:nz_data)); sp_val_u(:,:,:) = 0.0
+      allocate(mask_u(G%isdB:G%iedB,G%jsd:G%jed,1:nz_data)); mask_u(:,:,:) = 0.0
+
+
+
       do j=G%jsc,G%jec; do I=G%iscB,G%iecB
         sp_val_u(I,j,1:nz_data) = 0.5*(sp_val(i,j,1:nz_data)+sp_val(i+1,j,1:nz_data))
         mask_u(I,j,1:nz_data) = min(mask_z(i,j,1:nz_data),mask_z(i+1,j,1:nz_data))
@@ -1041,13 +1043,6 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
       enddo
       deallocate(sp_val, sp_val_u, mask_u, mask_z, hsrc)
       nz_data = CS%Ref_val_v%nz_data
-      allocate(sp_val( G%isd:G%ied,G%jsd:G%jed,1:nz_data))
-      allocate(sp_val_v(G%isd:G%ied,G%jsdB:G%jedB,1:nz_data))
-      allocate(mask_v(G%isd:G%ied,G%jsdB:G%jedB,1:nz_data))
-      allocate(mask_z(G%isd:G%ied,G%jsd:G%jed,1:nz_data))
-      sp_val(:,:,:) = 0.0
-      sp_val_v(:,:,:) = 0.0
-      mask_z(:,:,:) = 0.0
       ! Interpolate from the external horizontal grid and in time
       call horiz_interp_and_extrap_tracer(CS%Ref_val_v%id, Time, 1.0, G, sp_val, mask_z, z_in, &
                                           z_edges_in, missing_value, CS%reentrant_x, CS%tripolar_N, .false., &
@@ -1055,6 +1050,11 @@ subroutine apply_ALE_sponge(h, dt, G, GV, US, CS, Time)
                                           answers_2018=CS%hor_regrid_answers_2018)
       call pass_var(sp_val, G%Domain)
       call pass_var(mask_z, G%Domain)
+
+      allocate(sp_val_v(G%isd:G%ied,G%jsdB:G%jedB,1:nz_data)); sp_val_v(:,:,:) = 0.0
+      allocate(mask_v(G%isd:G%ied,G%jsdB:G%jedB,1:nz_data)); mask_v(:,:,:)=0.0
+
+
       do J=G%jscB,G%jecB; do i=G%isc,G%iec
         sp_val_v(i,J,1:nz_data) = 0.5*(sp_val(i,j,1:nz_data)+sp_val(i,j+1,1:nz_data))
         mask_v(i,J,1:nz_data) = min(mask_z(i,j,1:nz_data),mask_z(i,j+1,1:nz_data))

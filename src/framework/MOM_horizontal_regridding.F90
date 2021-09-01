@@ -393,6 +393,12 @@ subroutine horiz_interp_and_extrap_tracer_record(filename, varnam,  conversion, 
   allocate(lon_in(id), lat_in(jd), z_in(kd), z_edges_in(kd+1))
   allocate(tr_z(isd:ied,jsd:jed,kd), mask_z(isd:ied,jsd:jed,kd))
 
+  ! mask_z indicates valid data and should be consistent with G%mask2dT
+  ! within the computational domain. Values are initialized to zero
+  ! within the computational domain plus the adjacent cells. This is done
+  ! in order to facilitate the computation of edge values.
+  mask_z(is-1:ie+1,js-1:je+1,:)=0.0
+
   start = 1 ; count = 1 ; count(1) = id
   rcode = NF90_GET_VAR(ncid, dim_id(1), lon_in, start, count)
   if (rcode /= 0) call MOM_error(FATAL,"error reading dimension 1 values for var_name "// &
@@ -715,8 +721,12 @@ subroutine horiz_interp_and_extrap_tracer_fms_id(fms_id,  Time, conversion, G, t
   endif
 
   allocate(z_in(kd), z_edges_in(kd+1))
-
   allocate(tr_z(isd:ied,jsd:jed,kd), mask_z(isd:ied,jsd:jed,kd))
+  ! mask_z indicates valid data and should be consistent with G%mask2dT
+  ! within the computational domain. Values are initialized to zero
+  ! within the computational domain plus the adjacent cells. This is done
+  ! in order to facilitate the computation of edge values.
+  mask_z(is-1:ie+1,js-1:je+1,:)=0.0
 
   call get_axis_data(axes_data(3), z_in)
 
