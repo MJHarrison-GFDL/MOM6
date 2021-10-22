@@ -629,6 +629,11 @@ subroutine get_field_size(filename, fieldname, sizes, field_found, no_domain)
             "get_field_size called with too few sizes for "//trim(fieldname)//" in "//trim(filename))
           call get_variable_size(fileobj_read, fieldname, sizes(1:ndims))
           do i=ndims+1,size(sizes) ; sizes(i) = 0 ; enddo
+          ! this preserves previous behavior when reading time-varying data without vertical extent.
+          if (size(sizes)==ndims+1) then
+            sizes(ndims+1)=sizes(ndims)
+            sizes(ndims)=1
+          endif
         endif
       endif
     endif
