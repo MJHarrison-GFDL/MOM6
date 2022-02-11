@@ -74,6 +74,10 @@ type, public :: set_visc_CS ; private
   logical :: Channel_drag   !< If true, the drag is exerted directly on each
                             !! layer according to what fraction of the bottom
                             !! they overlie.
+  logical :: fullBody_drag  !< If true, the drag is exerted directly on each
+                            !! layer in order to achieve a resting state. This
+                            !! option is useful for diagnosing numerical issues in
+                            !! idealized configurations.
   logical :: correct_BBL_bounds !< If true, uses the correct bounds on the BBL thickness and
                             !! viscosity so that the bottom layer feels the intended drag.
   logical :: RiNo_mix       !< If true, use Richardson number dependent mixing.
@@ -1007,6 +1011,28 @@ subroutine set_viscous_BBL(u, v, h, tv, visc, G, GV, US, CS, pbv)
       endif
     endif ; enddo ! end of i loop
   enddo ; enddo ! end of m & j loops
+
+  if (CS%fullBody_drag) then
+     do j=js, je
+       do I=isq, ieq
+         do k=1,nz
+           v_at_u = set_v_at_u(v, h, G, GV, i, j, k, mask_v, OBC)
+           visc%Ray_u(I,j,k) = visc%Ray_u(I,j,k) + sqrt(u(I,j,k)*u(I,j,k) + &
+                v_at_u*v_at_u)
+         enddo
+       enddo
+     enddo
+     do J=jsq, jeq
+       do i=is, ie
+         do k=1,nz
+           u_at_v = set_u_at_v(u, h, G, GV, i, j, k, mask_u, OBC)
+           visc%Ray_v(i,J,k) = visc%Ray_v(i,J,k) + sqrt(v(i,J,k)*v(i,J,k) + &
+                u_at_v*u_at_v)
+         enddo
+       enddo
+     enddo
+  endif
+
 
 ! Offer diagnostics for averaging
   if (CS%id_bbl_thick_u > 0) &
@@ -1970,6 +1996,9 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
                  "If true, the bottom drag is exerted directly on each "//&
                  "layer proportional to the fraction of the bottom it "//&
                  "overlies.", default=.false.)
+  call get_param(param_file, mdl, "FULLBODY_DRAG", CS%fullBody_drag, &
+                 "If true, the bottom drag is exerted directly on each "//&
+                 "layer in order to reach a resting state. ", default=.false.)
   call get_param(param_file, mdl, "LINEAR_DRAG", CS%linear_drag, &
                  "If LINEAR_DRAG and BOTTOMDRAGLAW are defined the drag "//&
                  "law is cdrag*DRAG_BG_VEL*u.", default=.false.)
@@ -2177,7 +2206,7 @@ subroutine set_visc_init(Time, G, GV, US, param_file, diag, visc, CS, restart_CS
       call pass_var(CS%tideamp,G%domain)
     endif
   endif
-  if (CS%Channel_drag) then
+  if (CS%Channel_drag .or. CS%fullBody_drag) then
     allocate(visc%Ray_u(IsdB:IedB,jsd:jed,nz), source=0.0)
     allocate(visc%Ray_v(isd:ied,JsdB:JedB,nz), source=0.0)
     CS%id_Ray_u = register_diag_field('ocean_model', 'Rayleigh_u', diag%axesCuL, &
@@ -2251,7 +2280,7 @@ subroutine set_visc_end(visc, CS)
     if (allocated(CS%bbl_u)) deallocate(CS%bbl_u)
     if (allocated(CS%bbl_v)) deallocate(CS%bbl_v)
   endif
-  if (CS%Channel_drag) then
+  if (CS%Channel_drag .or. CS%fullBody_drag) then
     deallocate(visc%Ray_u) ; deallocate(visc%Ray_v)
   endif
   if (CS%dynamic_viscous_ML) then
