@@ -122,6 +122,11 @@ type, public :: vertvisc_CS ; private
   type(diag_ctrl), pointer :: diag !< A structure that is used to regulate the
                                    !! timing of diagnostic output.
 
+  logical :: BodyDrag       !< If true, momentum is removed from layers with a piston
+                            !! velocity equal to the layer thickness divided by
+                            !!   BodyDragTimescale
+  real    :: BodyDragT      !< The timescale for BODYDRAG restoring, if True ( T ~> s).
+
   !>@{ Diagnostic identifiers
   integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1, id_au_vv = -1, id_av_vv = -1
   integer :: id_du_dt_str = -1, id_dv_dt_str = -1
@@ -319,7 +324,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     ! and the right-hand-side is destructively updated to be d'_k
     !
     do I=Isq,Ieq ; if (do_i(I)) then
-      b_denom_1 = CS%h_u(I,j,1) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
+      b_denom_1 = CS%h_u(I,j,1) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_u(I,j,2))
       d1(I) = b_denom_1 * b1(I)
       u(I,j,1) = b1(I) * (CS%h_u(I,j,1) * u(I,j,1) + surface_stress(I))
@@ -328,7 +333,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     endif ; enddo
     do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
       c1(I,k) = dt_Z_to_H * CS%a_u(I,j,K) * b1(I)
-      b_denom_1 = CS%h_u(I,j,k) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
+      b_denom_1 = CS%h_u(I,j,k)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_u(I,j,K+1))
       d1(I) = b_denom_1 * b1(I)
       u(I,j,k) = (CS%h_u(I,j,k) * u(I,j,k) + &
@@ -423,7 +428,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     enddo ; enddo ; endif
 
     do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
+      b_denom_1 = CS%h_v(i,J,1) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_v(i,J,2))
       d1(i) = b_denom_1 * b1(i)
       v(i,J,1) = b1(i) * (CS%h_v(i,J,1) * v(i,J,1) + surface_stress(i))
@@ -432,7 +437,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     endif ; enddo
     do k=2,nz ; do i=is,ie ; if (do_i(i)) then
       c1(i,k) = dt_Z_to_H * CS%a_v(i,J,K) * b1(i)
-      b_denom_1 = CS%h_v(i,J,k) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
+      b_denom_1 = CS%h_v(i,J,k) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_v(i,J,K+1))
       d1(i) = b_denom_1 * b1(i)
       v(i,J,k) = (CS%h_v(i,J,k) * v(i,J,k) + dt_Z_to_H * CS%a_v(i,J,K) * v(i,J,k-1)) * b1(i)
@@ -600,14 +605,14 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
     enddo ; enddo ; endif
 
     do I=Isq,Ieq ; if (do_i(I)) then
-      b_denom_1 = CS%h_u(I,j,1) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
+      b_denom_1 = CS%h_u(I,j,1)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_u(I,j,2))
       d1(I) = b_denom_1 * b1(I)
       visc_rem_u(I,j,1) = b1(I) * CS%h_u(I,j,1)
     endif ; enddo
     do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
       c1(I,k) = dt_Z_to_H * CS%a_u(I,j,K)*b1(I)
-      b_denom_1 = CS%h_u(I,j,k) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
+      b_denom_1 = CS%h_u(I,j,k) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_u(I,j,K+1))
       d1(I) = b_denom_1 * b1(I)
       visc_rem_u(I,j,k) = (CS%h_u(I,j,k) + dt_Z_to_H * CS%a_u(I,j,K) * visc_rem_u(I,j,k-1)) * b1(I)
@@ -629,14 +634,14 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
     enddo ; enddo ; endif
 
     do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
+      b_denom_1 = CS%h_v(i,J,1)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_v(i,J,2))
       d1(i) = b_denom_1 * b1(i)
       visc_rem_v(i,J,1) = b1(i) * CS%h_v(i,J,1)
     endif ; enddo
     do k=2,nz ; do i=is,ie ; if (do_i(i)) then
       c1(i,k) = dt_Z_to_H * CS%a_v(i,J,K)*b1(i)
-      b_denom_1 = CS%h_v(i,J,k) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
+      b_denom_1 = CS%h_v(i,J,k)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_v(i,J,K+1))
       d1(i) = b_denom_1 * b1(i)
       visc_rem_v(i,J,k) = (CS%h_v(i,J,k) + dt_Z_to_H * CS%a_v(i,J,K) * visc_rem_v(i,J,k-1)) * b1(i)
@@ -1700,6 +1705,15 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "the purpose of determining the extent to which the "//&
                  "thicknesses used in the viscosities are upwinded.", &
                  default=0.0, units="nondim")
+  call get_param(param_file, mdl, "BODYDRAG", CS%Bodydrag, &
+                 "If true, momentum is removed from each  layer "//&
+                 "at a rate to the speed of the layer divided by "//&
+                 "the damping timescale BODYDRAG_TIMESCALE  ", default=.false.)
+  call get_param(param_file, mdl, "BODYDRAG_TIMESCALE", CS%BodydragT, &
+                 "The rate at which momentum is removed from layers if "//&
+                 "BODYDRAG is True.  ", default=0.0, units="sec")
+  if (CS%BodyDragT < 0.0) call MOM_error(FATAL,"MOM_vert_friction: bad bodyDragT")
+  if (CS%BodyDragT > 0.0) CS%BodyDragT=1.0/CS%BodyDragT
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false.)
 
   if (GV%nkml < 1) &
