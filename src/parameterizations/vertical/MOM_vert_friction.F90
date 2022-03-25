@@ -126,7 +126,8 @@ type, public :: vertvisc_CS ; private
                             !! velocity equal to the layer thickness divided by
                             !!   BodyDragTimescale
   real    :: BodyDragT      !< The timescale for BODYDRAG restoring, if True ( T ~> s).
-  real    :: Ray_coef       !! The coefficient used to damp flow to rest (non-dimensional)
+  real    :: Ray_coef       !< The coefficient used to damp flow to rest
+                            !! if BodyDrag is set to True [non-dimensional]
 
   !>@{ Diagnostic identifiers
   integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1, id_au_vv = -1, id_av_vv = -1
