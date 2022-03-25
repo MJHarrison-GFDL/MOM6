@@ -126,6 +126,7 @@ type, public :: vertvisc_CS ; private
                             !! velocity equal to the layer thickness divided by
                             !!   BodyDragTimescale
   real    :: BodyDragT      !< The timescale for BODYDRAG restoring, if True ( T ~> s).
+  real    :: Ray_coef       !! The coefficient used to damp flow to rest (non-dimensional)
 
   !>@{ Diagnostic identifiers
   integer :: id_du_dt_visc = -1, id_dv_dt_visc = -1, id_au_vv = -1, id_av_vv = -1
@@ -138,6 +139,7 @@ type, public :: vertvisc_CS ; private
   integer :: id_hf_du_dt_visc_2d = -1, id_hf_dv_dt_visc_2d = -1
   integer :: id_h_du_dt_str    = -1, id_h_dv_dt_str    = -1
   integer :: id_du_dt_str_visc_rem = -1, id_dv_dt_str_visc_rem = -1
+  integer :: id_ray_u, id_ray_v
   !>@}
 
   type(PointAccel_CS), pointer :: PointAccel_CSp => NULL() !< A pointer to the control structure
@@ -157,7 +159,7 @@ contains
 !! is the <em>interfacial coupling thickness per time step</em>,
 !! encompassing background viscosity as well as contributions from
 !! enhanced mixed and bottom layer viscosities.
-!! $r_k$ is a Rayleight drag term due to channel drag.
+!! $r_k$ is a Rayleigh drag term due to channel drag.
 !! There is an additional stress term on the right-hand side
 !! if DIRECT_STRESS is true, applied to the surface layer.
 
@@ -219,6 +221,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   real :: surface_stress(SZIB_(G))! The same as stress, unless the wind stress
                            ! stress is applied as a body force [H L T-1 ~> m2 s-1 or kg m-1 s-1].
 
+
   logical :: do_i(SZIB_(G))
   logical :: DoStokesMixing
 
@@ -242,6 +245,8 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   Idt = 1.0 / dt
 
   accel_underflow = CS%vel_underflow * Idt
+
+  if (CS%bodyDrag) CS%Ray_coef = exp(-1.0*dt*CS%bodyDragT)
 
   !Check if Stokes mixing allowed if requested (present and associated)
   DoStokesMixing=.false.
@@ -324,7 +329,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     ! and the right-hand-side is destructively updated to be d'_k
     !
     do I=Isq,Ieq ; if (do_i(I)) then
-      b_denom_1 = CS%h_u(I,j,1) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
+      b_denom_1 = CS%h_u(I,j,1) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_u(I,j,2))
       d1(I) = b_denom_1 * b1(I)
       u(I,j,1) = b1(I) * (CS%h_u(I,j,1) * u(I,j,1) + surface_stress(I))
@@ -333,7 +338,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     endif ; enddo
     do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
       c1(I,k) = dt_Z_to_H * CS%a_u(I,j,K) * b1(I)
-      b_denom_1 = CS%h_u(I,j,k)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
+      b_denom_1 = CS%h_u(I,j,k) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_u(I,j,K+1))
       d1(I) = b_denom_1 * b1(I)
       u(I,j,k) = (CS%h_u(I,j,k) * u(I,j,k) + &
@@ -428,7 +433,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     enddo ; enddo ; endif
 
     do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
+      b_denom_1 = CS%h_v(i,J,1) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_v(i,J,2))
       d1(i) = b_denom_1 * b1(i)
       v(i,J,1) = b1(i) * (CS%h_v(i,J,1) * v(i,J,1) + surface_stress(i))
@@ -437,7 +442,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
     endif ; enddo
     do k=2,nz ; do i=is,ie ; if (do_i(i)) then
       c1(i,k) = dt_Z_to_H * CS%a_v(i,J,K) * b1(i)
-      b_denom_1 = CS%h_v(i,J,k) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
+      b_denom_1 = CS%h_v(i,J,k)  + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_v(i,J,K+1))
       d1(i) = b_denom_1 * b1(i)
       v(i,J,k) = (CS%h_v(i,J,k) * v(i,J,k) + dt_Z_to_H * CS%a_v(i,J,K) * v(i,J,k-1)) * b1(i)
@@ -483,6 +488,29 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   enddo ! end of v-component J loop
 
   call vertvisc_limit_vel(u, v, h, ADp, CDp, forces, visc, dt, G, GV, US, CS)
+
+  ! Rayleigh drag (for diagnostic purposes only)
+
+  if (CS%BodyDrag) then
+    do j=js,je; do I=Isq,Ieq; do k=1,nz
+      if (ASSOCIATED(ADp%du_dt_ray)) ADp%du_dt_ray(I,j,k)=u(I,j,k)
+      u(I,j,k)=u(I,j,k)*CS%Ray_coef
+      if (ASSOCIATED(ADp%du_dt_ray)) ADp%du_dt_ray(I,j,k)=Idt*(u(I,j,k)-ADp%du_dt_ray(I,j,k))
+    enddo; enddo; enddo
+    do J=Jsq,Jeq; do i=is,ie; do k=1,nz
+      if (ASSOCIATED(ADp%dv_dt_ray)) ADp%dv_dt_ray(i,J,k)=v(i,J,k)
+      v(i,J,k)=v(i,J,k)*CS%Ray_coef
+      if (ASSOCIATED(ADp%dv_dt_ray)) ADp%dv_dt_ray(i,J,k)=Idt*(v(i,J,k)-ADp%dv_dt_ray(i,J,k))
+    enddo; enddo; enddo
+
+    ! Offer diagnostic fields for averaging.
+    if (CS%id_ray_u > 0) &
+      call post_data(CS%id_ray_u, ADp%du_dt_ray, CS%diag)
+    if (CS%id_ray_v > 0) &
+      call post_data(CS%id_ray_v, ADp%dv_dt_ray, CS%diag)
+
+  endif
+
 
   ! Here the velocities associated with open boundary conditions are applied.
   if (associated(OBC)) then
@@ -605,14 +633,14 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
     enddo ; enddo ; endif
 
     do I=Isq,Ieq ; if (do_i(I)) then
-      b_denom_1 = CS%h_u(I,j,1)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
+      b_denom_1 = CS%h_u(I,j,1) + dt_Z_to_H * (Ray(I,1) + CS%a_u(I,j,1))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_u(I,j,2))
       d1(I) = b_denom_1 * b1(I)
       visc_rem_u(I,j,1) = b1(I) * CS%h_u(I,j,1)
     endif ; enddo
     do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
       c1(I,k) = dt_Z_to_H * CS%a_u(I,j,K)*b1(I)
-      b_denom_1 = CS%h_u(I,j,k) * (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
+      b_denom_1 = CS%h_u(I,j,k) + dt_Z_to_H * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
       b1(I) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_u(I,j,K+1))
       d1(I) = b_denom_1 * b1(I)
       visc_rem_u(I,j,k) = (CS%h_u(I,j,k) + dt_Z_to_H * CS%a_u(I,j,K) * visc_rem_u(I,j,k-1)) * b1(I)
@@ -634,14 +662,14 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
     enddo ; enddo ; endif
 
     do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
+      b_denom_1 = CS%h_v(i,J,1) + dt_Z_to_H * (Ray(i,1) + CS%a_v(i,J,1))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H*CS%a_v(i,J,2))
       d1(i) = b_denom_1 * b1(i)
       visc_rem_v(i,J,1) = b1(i) * CS%h_v(i,J,1)
     endif ; enddo
     do k=2,nz ; do i=is,ie ; if (do_i(i)) then
       c1(i,k) = dt_Z_to_H * CS%a_v(i,J,K)*b1(i)
-      b_denom_1 = CS%h_v(i,J,k)* (1.0 + dt_Z_to_H*CS%bodyDragT) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
+      b_denom_1 = CS%h_v(i,J,k) + dt_Z_to_H * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
       b1(i) = 1.0 / (b_denom_1 + dt_Z_to_H * CS%a_v(i,J,K+1))
       d1(i) = b_denom_1 * b1(i)
       visc_rem_v(i,J,k) = (CS%h_v(i,J,k) + dt_Z_to_H * CS%a_v(i,J,K) * visc_rem_v(i,J,k-1)) * b1(i)
@@ -650,6 +678,17 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
       visc_rem_v(i,J,k) = visc_rem_v(i,J,k) + c1(i,k+1)*visc_rem_v(i,J,k+1)
     endif ; enddo ; enddo ! i and k loops
   enddo ! end of v-component J loop
+
+  ! Rayleigh drag (for diagnostic purposes only)
+
+  if (CS%BodyDrag) then
+    do j=G%jsc,G%jec; do I=Isq,Ieq; do k=1,nz
+      visc_rem_u(I,j,k)=visc_rem_u(I,j,k)*CS%Ray_coef
+    enddo; enddo; enddo
+    do J=Jsq,Jeq; do i=is,ie; do k=1,nz
+      visc_rem_v(i,J,k)=visc_rem_v(i,J,k)*CS%Ray_coef
+    enddo; enddo; enddo
+  endif
 
   if (CS%debug) then
     call uvchksum("visc_rem_[uv]", visc_rem_u, visc_rem_v, G%HI, haloshift=0, &
@@ -1848,6 +1887,15 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   CS%id_dv_dt_visc = register_diag_field('ocean_model', 'dv_dt_visc', diag%axesCvL, Time, &
       'Meridional Acceleration from Vertical Viscosity', 'm s-2', conversion=US%L_T2_to_m_s2)
   if (CS%id_dv_dt_visc > 0) call safe_alloc_ptr(ADp%dv_dt_visc,isd,ied,JsdB,JedB,nz)
+
+  CS%id_ray_u = register_diag_field('ocean_model', 'du_dt_ray', diag%axesCuL, Time, &
+      'Zonal Acceleration from Rayleigh drag', 'm s-2', conversion=US%L_T2_to_m_s2)
+  if (CS%id_ray_u > 0) call safe_alloc_ptr(ADp%du_dt_ray,IsdB,IedB,jsd,jed,nz)
+
+  CS%id_ray_v = register_diag_field('ocean_model', 'dv_dt_ray', diag%axesCvL, Time, &
+      'Meridional Acceleration from Rayleigh drag', 'm s-2', conversion=US%L_T2_to_m_s2)
+  if (CS%id_ray_v > 0) call safe_alloc_ptr(ADp%dv_dt_ray,isd,ied,JsdB,JedB,nz)
+
 
   CS%id_du_dt_str = register_diag_field('ocean_model', 'du_dt_str', diag%axesCuL, Time, &
       'Zonal Acceleration from Surface Wind Stresses', 'm s-2', conversion=US%L_T2_to_m_s2)
