@@ -320,7 +320,7 @@ program coupler_main
   use time_manager_mod,        only: NOLEAP, NO_CALENDAR, INVALID_CALENDAR
   use time_manager_mod,        only: date_to_string, increment_date
   use time_manager_mod,        only: operator(>=), operator(<=), operator(==)
-  use time_interp_external_mod,only: init_external_field, time_interp_external
+  use time_interp_external_mod,only: init_external_field, time_interp_external_init
   use fms_mod,                 only: open_namelist_file, field_exist, file_exist, check_nml_error
   use fms_mod,                 only: uppercase, error_mesg, write_version_number
   use fms_mod,                 only: fms_init, fms_end, stdout
@@ -2028,6 +2028,7 @@ contains
           SMB_s%total_out=0.0
           SMB_c%total_out=0.0
           if (read_pmt) then
+             call time_interp_external_init()
              SMB_n%id_target = init_external_field('INPUT/pmt_north.nc',&
                   'poleward_moisture_transport')
              SMB_s%id_target = init_external_field('INPUT/pmt_south.nc',&
@@ -2256,6 +2257,12 @@ contains
       do n = 1, num_ice_bc_restart
         call save_restart(Ice_bc_restart(n), time_stamp)
       enddo
+
+      if (adjust_surface_mass_balance) then
+        call save_restart(SMB_n%restart_file, time_stamp)
+        call save_restart(SMB_s%restart_file, time_stamp)
+        call save_restart(SMB_c%restart_file, time_stamp)
+      endif
     endif
 
   end subroutine coupler_restart

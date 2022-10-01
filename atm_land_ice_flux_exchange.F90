@@ -1680,6 +1680,8 @@ contains
           ex_t_ref(i) = 200.
           if(ex_avail(i)) &
                ex_t_ref(i) = ex_t_ca(i) + (ex_t_atm(i)-ex_t_ca(i)) * ex_del_h(i)
+          if (ex_t_ref(i) .lt. -173.) ex_t_ref(i)=-173.
+          if (ex_t_ref(i) .gt. 350.) ex_t_ref(i)=350.
        enddo
        call compute_qs (ex_t_ref(is:ie), ex_p_surf(is:ie), ex_qs_ref(is:ie), q = ex_ref(is:ie))
        call compute_qs (ex_t_ref(is:ie), ex_p_surf(is:ie), ex_qs_ref_cmip(is:ie),  &
@@ -2457,6 +2459,7 @@ contains
     if (ov) then
        Ice_boundary%sw_flux_nir_dif = Ice_boundary%sw_down_nir_dif*(1.0-Ice%albedo_nir_dif)
     endif
+
     call data_override('ICE', 'lprec',  Ice_boundary%lprec,   Time)
     call data_override('ICE', 'fprec',  Ice_boundary%fprec,   Time)
     call data_override('ICE', 'dhdt',   Ice_boundary%dhdt,    Time)
