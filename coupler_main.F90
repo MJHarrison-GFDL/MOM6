@@ -532,10 +532,13 @@ program coupler_main
   logical :: use_hyper_thread = .false.
   integer :: ncores_per_node = 0
   logical :: debug_affinity = .false.
-  real    :: smb_north_lat=90., smb_south_lat=-90., pmt_north=0., pmt_south=0.
-  logical :: read_pmt=.false.
-  logical :: adjust_surface_mass_balance=.false.
-  integer :: pmt_window=1
+
+  logical :: adjust_surface_mass_balance=.false. !< use a surface mass balance adjustment (for OCN/LAND forced experiments)
+                                    !! as described in Harrison et al, 2022 ( https://doi.org/10.1029/2021MS002888 )
+  real    :: smb_north_lat=90., smb_south_lat=-90.  !< bounding latitudes for polar regions (+/- 90 deg for global adjustments only)
+  real    :: pmt_north=0., pmt_south=0.  !! Specified polar regional mass target value if read_pmt is False
+  logical :: read_pmt=.false.       !! If true, read a time-varying polar mass budget from file
+  integer :: pmt_window=1           !! A window for lagging flux adjustments (number of slow coupled timesteps)
 
   namelist /coupler_nml/ current_date, calendar, force_date_from_namelist,         &
                          months, days, hours, minutes, seconds, dt_cpld, dt_atmos, &
@@ -2049,7 +2052,7 @@ contains
 
        if (associated(Smb_n%smb_hist)) then
           filename='pmt_n.res.nc'
-          filename = 'INPUT/'//trim(filename)
+          filename = trim(filename)
           fieldname='poleward_moisture_transport'
           allocate(Smb_n%restart_file)
           id_restart = register_restart_field(Smb_n%restart_file, filename, &
@@ -2059,14 +2062,14 @@ contains
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
             call read_data(filename, fieldname, Smb_n%smb_hist)
-          else
+          else if (Time  > Time_init) then
             call mpp_error(WARNING, trim(error_header) // ' Couldn''t find field ' //     &
                  trim(fieldname) // ' in file ' //trim(filename))
           endif
        endif
        if (associated(Smb_s%smb_hist)) then
           filename='pmt_s.res.nc'
-          filename = 'INPUT/'//trim(filename)
+          filename = trim(filename)
           fieldname='poleward_moisture_transport'
           allocate(Smb_s%restart_file)
           id_restart = register_restart_field(Smb_s%restart_file, filename, &
@@ -2076,14 +2079,14 @@ contains
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
             call read_data(filename, fieldname, Smb_s%smb_hist)
-          else
+          else if (Time  > Time_init) then
             call mpp_error(WARNING, trim(error_header) // ' Couldn''t find field ' //     &
                  trim(fieldname) // ' in file ' //trim(filename))
           endif
        endif
        if (associated(Smb_c%smb_hist)) then
           filename='pmt_c.res.nc'
-          filename = 'INPUT/'//trim(filename)
+          filename = trim(filename)
           fieldname='poleward_moisture_transport'
           allocate(Smb_c%restart_file)
           id_restart = register_restart_field(Smb_c%restart_file, filename, &
@@ -2093,7 +2096,7 @@ contains
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
             call read_data(filename, fieldname, Smb_c%smb_hist)
-          else
+          else if (Time  > Time_init) then
             call mpp_error(WARNING, trim(error_header) // ' Couldn''t find field ' //     &
                  trim(fieldname) // ' in file ' //trim(filename))
           endif
