@@ -2090,7 +2090,7 @@ contains
           fieldname='poleward_moisture_transport'
           allocate(Smb_c%restart_file)
           id_restart = register_restart_field(Smb_c%restart_file, filename, &
-                       fieldname, Smb_s%smb_hist)
+                       fieldname, Smb_c%smb_hist)
           if ( field_exist(filename, fieldname) ) then
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
