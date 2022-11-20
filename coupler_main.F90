@@ -2061,7 +2061,7 @@ contains
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
-            call read_data(filename, fieldname, Smb_n%smb_hist)
+            call read_data('INPUT/'//filename, fieldname, Smb_n%smb_hist)
           else if (Time  > Time_init) then
             call mpp_error(WARNING, trim(error_header) // ' Couldn''t find field ' //     &
                  trim(fieldname) // ' in file ' //trim(filename))
@@ -2078,7 +2078,7 @@ contains
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
-            call read_data(filename, fieldname, Smb_s%smb_hist)
+            call read_data('INPUT/'//filename, fieldname, Smb_s%smb_hist)
           else if (Time  > Time_init) then
             call mpp_error(WARNING, trim(error_header) // ' Couldn''t find field ' //     &
                  trim(fieldname) // ' in file ' //trim(filename))
@@ -2095,7 +2095,7 @@ contains
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
-            call read_data(filename, fieldname, Smb_c%smb_hist)
+            call read_data('INPUT/'//filename, fieldname, Smb_c%smb_hist)
           else if (Time  > Time_init) then
             call mpp_error(WARNING, trim(error_header) // ' Couldn''t find field ' //     &
                  trim(fieldname) // ' in file ' //trim(filename))
