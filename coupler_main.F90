@@ -1970,10 +1970,15 @@ contains
                num_ocn_bc_restart, Ocean%domain, ocean_restart=.true.)
 
       ! Restore the fields from the restart files
-        do l = 1, num_ocn_bc_restart
+      do l = 1, num_ocn_bc_restart
         call restore_state(Ocn_bc_restart(l), directory='INPUT', &
                            nonfatal_missing_files=.true.)
-        enddo
+      enddo
+
+      ! Check whether the restarts were read successfully.
+      call coupler_type_restore_state(Ocean%fields, directory='INPUT', &
+                                      test_by_field=.true.)
+
      endif
 
     if (Atm%pe) then
