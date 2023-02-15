@@ -2062,7 +2062,7 @@ contains
           allocate(Smb_n%restart_file)
           id_restart = register_restart_field(Smb_n%restart_file, filename, &
                        fieldname, Smb_n%smb_hist)
-          if ( field_exist(filename, fieldname) ) then
+          if ( field_exist('INPUT/'//filename, fieldname) ) then
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
@@ -2079,7 +2079,7 @@ contains
           allocate(Smb_s%restart_file)
           id_restart = register_restart_field(Smb_s%restart_file, filename, &
                        fieldname, Smb_s%smb_hist)
-          if ( field_exist(filename, fieldname) ) then
+          if ( field_exist('INPUT/'//filename, fieldname) ) then
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)
@@ -2096,7 +2096,7 @@ contains
           allocate(Smb_c%restart_file)
           id_restart = register_restart_field(Smb_c%restart_file, filename, &
                        fieldname, Smb_c%smb_hist)
-          if ( field_exist(filename, fieldname) ) then
+          if ( field_exist('INPUT/'//filename, fieldname) ) then
             other_fields_exist = .true.
             write (outunit,*) trim(note_header), ' Reading restart info for ',         &
                  trim(fieldname), ' from ',  trim(filename)

@@ -2003,8 +2003,8 @@ contains
     if (smb_present) then
 
        ! do not actually modify precipitation here, but calculate new scale factors
-       call update_surface_mass_balance(Atm,Atmos_boundary,SMB(1),Time)
-       call update_surface_mass_balance(Atm,Atmos_boundary,SMB(2),Time)
+       call update_surface_mass_balance(Atm,Atmos_boundary,SMB(1),Time,'North')
+       call update_surface_mass_balance(Atm,Atmos_boundary,SMB(2),Time,'South')
        call smb_balance(Atm,Smb(1),Smb(2),SMB(3),Atmos_boundary)
 
        call mpp_get_compute_domain(Atm%Domain, is_atm, ie_atm, js_atm, je_atm)
@@ -2770,7 +2770,7 @@ contains
     call get_from_xgrid (Land_Ice_Atmos_Boundary%dt_t, 'ATM', ex_delta_t_n, xmap_sfc)
 #ifndef use_AM3_physics
     call get_from_xgrid (Land_Ice_Atmos_Boundary%shflx,'ATM', ex_flux_t    , xmap_sfc) !miz
-    call get_from_xgrid (Land_Ice_Atmos_Boundary%lhflx,'ATM', ex_flux_tr(:,isphum), xmap_sfc)!miz
+!    call get_from_xgrid (Land_Ice_Atmos_Boundary%lhflx,'ATM', ex_flux_tr(:,isphum), xmap_sfc)!miz
 #endif
 
     call get_from_xgrid (Land_Ice_Atmos_Boundary%lhflx,'ATM', ex_flux_tr(:,isphum), xmap_sfc)!miz
@@ -3884,22 +3884,25 @@ contains
   end subroutine atm_stock_integrate
 
 
-  subroutine update_surface_mass_balance(Atm, LIAb, Smb,Time)
+  subroutine update_surface_mass_balance(Atm, LIAb, Smb,Time, Region)
 
     type (atmos_data_type), intent(in) :: Atm
     type(land_ice_atmos_boundary_type), intent(in) :: LIAb
     type(surface_mass_balance_type), intent(inout)  :: Smb
     type(time_type), intent(in) :: Time
+    character(len=*), intent(in) :: Region
 
     integer :: is, ie, js, je
     integer :: i,j,cwlen
     real :: lat1, lat2
     real :: avg, dif, pr_scale
     real :: min_lat, max_lat
+    real, parameter :: smb_rescale_min=0.75, smb_rescale_max=1.25
+    real,dimension(size(Smb%smb_hist)) :: tmp_hist
 
     call mpp_get_compute_domain(Atm%Domain, is, ie, js, je)
 
-!    call mpp_set_current_pelist(Atm%pelist)
+    !call mpp_set_current_pelist(Atm%pelist)
 
     do j=js,je
       do i=is,ie
@@ -3917,7 +3920,7 @@ contains
     call mpp_sum(Smb%total_out)
     Smb%sum_mask=sum(Smb%mask)
     call mpp_sum(Smb%sum_mask)
-    cwlen=0
+    cwlen=size(Smb%smb_hist)
     do i=1,size(Smb%smb_hist)
       if (Smb%smb_hist(i)==0.0) then
          cwlen=i-1
@@ -3928,8 +3931,9 @@ contains
        Smb%smb_hist(cwlen+1)=Smb%total
        avg = sum(Smb%smb_hist)/(cwlen+1)
     else
-       Smb%smb_hist=cshift(Smb%smb_hist,1)
-       Smb%smb_hist(cwlen)=Smb%total
+       tmp_hist=cshift(Smb%smb_hist,1)
+       tmp_hist(cwlen)=Smb%total
+       Smb%smb_hist=tmp_hist
        avg = sum(Smb%smb_hist)/cwlen
     endif
 
@@ -3938,12 +3942,15 @@ contains
     dif = Smb%smb_target - avg
     pr_scale=1.0
     if (Smb%total_in  > 0.) pr_scale = 1.0 + dif/Smb%total_in
-    Smb%scale_factor = pr_scale
+    Smb%scale_factor = max(min(smb_rescale_max,pr_scale),smb_rescale_min)
+    !Smb%scale_factor = pr_scale
 
     Smb%total = Smb%scale_factor*Smb%total_in - Smb%total_out
 
-!    if (mpp_pe()==mpp_root_pe()) print *,'scale factor for precip= ',Smb%scale_factor, Smb%total, Smb%total_in, Smb%total_out
-!    call mpp_set_current_pelist()
+
+    if (mpp_pe()==mpp_root_pe()) print *,trim(Region)//' scale factor for precip= ',Smb%scale_factor !, Smb%total/1.e6, Smb%smb_target/1.e6
+    !if (mpp_pe()==mpp_root_pe()) print *,trim(Region)//' SMB history= ',Smb%smb_hist
+    !call mpp_set_current_pelist()
     return
 
   end subroutine update_surface_mass_balance
