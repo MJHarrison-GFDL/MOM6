@@ -906,10 +906,12 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
   do j=G%jsc,G%jec
     do i=G%isc,G%iec
-      if (rhoi_rhow * ISS%h_shelf(i,j) - CS%bed_elev(i,j) > 0) then
-        float_cond(i,j) = 1.0
-        CS%ground_frac(i,j) = 1.0
-        CS%OD_av(i,j) =0.0
+      if (ISS%hmask(i,j)>0) then
+        if (rhoi_rhow * ISS%h_shelf(i,j) - CS%bed_elev(i,j) > 0) then
+          float_cond(i,j) = 1.0
+          CS%ground_frac(i,j) = 1.0
+          CS%OD_av(i,j) =0.0
+        endif
       endif
     enddo
   enddo
@@ -992,6 +994,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     call max_across_PEs(err_init)
   endif
 
+
   u_last(:,:) = u_shlf(:,:) ; v_last(:,:) = v_shlf(:,:)
 
   !! begin loop
@@ -1009,7 +1012,8 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     write(mesg,*) "ice_shelf_solve_outer: linear solve done in ",iters," iterations"
     call MOM_mesg(mesg, 5)
 
-    call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
+
+   call calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
     call pass_var(CS%ice_visc, G%domain)
     call calc_shelf_taub(CS, ISS, G, US, u_shlf, v_shlf)
     call pass_var(CS%basal_traction, G%domain)
