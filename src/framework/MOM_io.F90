@@ -668,6 +668,20 @@ subroutine reopen_MOM_file(IO_handle, filename, vars, novars, fields, &
   thread = SINGLE_FILE
   if (PRESENT(threading)) thread = threading
 
+  ! For single-file IO, only the root PE is required to set up the fields.
+  ! This permits calls by either the root PE or all PEs
+  if (.not. is_root_PE() .and. thread == SINGLE_FILE) return
+
+  ! For multiple IO domains, we would need additional functionality:
+  ! * Identify ranks as IO PEs
+  ! * Determine the filename of
+  ! Neither of these tasks should be handed by MOM6, so we cannot safely use
+  ! this function.  A framework-specific `inquire()` function is needed.
+  ! Until it exists, we will disable this function.
+  if (thread == MULTIPLE) &
+    call MOM_error(FATAL, 'reopen_MOM_file does not yet support files with ' &
+      // 'multiple I/O domains.')
+
   check_name = filename
   length = len(trim(check_name))
   if (check_name(length-2:length) /= ".nc") check_name = trim(check_name)//".nc"
@@ -2043,15 +2057,16 @@ subroutine MOM_read_data_2d(filename, fieldname, data, MOM_Domain, &
 end subroutine MOM_read_data_2d
 
 
-!> Read a 2d array from file using native netCDF I/O.
+!> Read a 2d array (which might have halos) from a file using native netCDF I/O.
 subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
                             timelevel, position, rescale)
   character(len=*), intent(in) :: filename
     !< Input filename
   character(len=*), intent(in)  :: fieldname
     !< Field variable name
-  real, intent(out) :: values(:,:)
-    !< Field value
+  real, intent(inout) :: values(:,:)
+    !< Field values read from the file.  It would be intent(out) but for the
+    !! need to preserve any initialized values in the halo regions.
   type(MOM_domain_type), intent(in) :: MOM_Domain
     !< Model domain decomposition
   integer, optional, intent(in) :: timelevel
@@ -2059,7 +2074,7 @@ subroutine read_netCDF_data_2d(filename, fieldname, values, MOM_Domain, &
   integer, optional, intent(in) :: position
     !< Grid positioning flag
   real, optional, intent(in) :: rescale
-    !< Rescale factor
+    !< Rescale factor, omitting this is the same as setting it to 1.
 
   integer :: turns
     ! Number of quarter-turns from input to model grid
