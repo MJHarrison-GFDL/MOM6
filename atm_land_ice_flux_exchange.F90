@@ -3897,7 +3897,7 @@ contains
     real :: lat1, lat2
     real :: avg, dif, pr_scale
     real :: min_lat, max_lat
-    real, parameter :: smb_rescale_min=0.75, smb_rescale_max=1.25
+    real, parameter :: smb_rescale_min=0.05, smb_rescale_max=1.95
     real,dimension(size(Smb%smb_hist)) :: tmp_hist
 
     call mpp_get_compute_domain(Atm%Domain, is, ie, js, je)
