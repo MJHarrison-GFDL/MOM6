@@ -139,8 +139,11 @@ type, public :: vertvisc_CS ; private
   integer :: answer_date    !< The vintage of the order of arithmetic and expressions in the viscous
                             !! calculations.  Values below 20190101 recover the answers from the end
                             !! of 2018, while higher values use expressions that do not use an
-                            !! arbitrary and hard-coded maximum viscous coupling coefficient
-                            !! between layers.
+                            !! arbitrary and hard-coded maximum viscous coupling coefficient between
+                            !! layers.  In non-Boussinesq cases, values below 20230601 recover a
+                            !! form of the viscosity within  the mixed layer that breaks up the
+                            !! magnitude of the wind stress with BULKMIXEDLAYER, DYNAMIC_VISCOUS_ML
+                            !! or FIXED_DEPTH_LOTW_ML, but not LOTW_VISCOUS_ML_FLOOR.
   logical :: debug          !< If true, write verbose checksums for debugging purposes.
   integer :: nkml           !< The number of layers in the mixed layer.
   integer, pointer :: ntrunc !< The number of times the velocity has been
@@ -935,7 +938,7 @@ end subroutine vertvisc_remnant
 !> Calculate the coupling coefficients (CS%a_u, CS%a_v, CS%a_u_gl90, CS%a_v_gl90)
 !! and effective layer thicknesses (CS%h_u and CS%h_v) for later use in the
 !! applying the implicit vertical viscosity via vertvisc().
-subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
+subroutine vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS, OBC, VarMix)
   type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV     !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in)    :: US     !< A dimensional unit scaling type
@@ -945,8 +948,12 @@ subroutine vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS, OBC, VarMix)
                            intent(in)    :: v      !< Meridional velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in)    :: h      !< Layer thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(in)    :: dz     !< Vertical distance across layers [Z ~> m]
   type(mech_forcing),      intent(in)    :: forces !< A structure with the driving mechanical forces
   type(vertvisc_type),     intent(in)    :: visc   !< Viscosities and bottom drag
+  type(thermo_var_ptrs),   intent(in)    :: tv     !< A structure containing pointers to any available
+                                                   !! thermodynamic fields.
   real,                    intent(in)    :: dt     !< Time increment [T ~> s]
   type(vertvisc_CS),       pointer       :: CS     !< Vertical viscosity control structure
   type(ocean_OBC_type),    pointer       :: OBC    !< Open boundary condition structure
@@ -1516,6 +1523,8 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
 
   real, dimension(SZIB_(G)) :: &
     u_star, &   ! ustar at a velocity point [Z T-1 ~> m s-1].
+    tau_mag, &  ! The magnitude of the wind stress at a velocity point including gustiness,
+                ! divided by the Boussinesq refernce density [Z2 T-2 ~> m2 s-2]
     absf, &     ! The average of the neighboring absolute values of f [T-1 ~> s-1].
 !      h_ml, &  ! The mixed layer depth [H ~> m or kg m-2].
     z_t, &      ! The distance from the top, sometimes normalized
@@ -1888,7 +1897,12 @@ subroutine find_coupling_coef(a_cpl, hvel, do_i, h_harm, bbl_thick, kv_bbl, z_i,
         temp1 = (z_t(i)*h_ml(i) - z_t(i)*z_t(i))*GV%H_to_Z
         !   This viscosity is set to go to 0 at the mixed layer top and bottom (in a log-layer)
         ! and be further limited by rotation to give the natural Ekman length.
-        visc_ml = u_star(i) * CS%vonKar * (temp1*u_star(i)) / (absf(i)*temp1 + (h_ml(i)+h_neglect)*u_star(i))
+        if (GV%Boussinesq .or. (CS%answer_date < 20230601)) then
+          visc_ml = u_star(i) * CS%vonKar * (temp1*u_star(i)) / (absf(i)*temp1 + (h_ml(i)+h_neglect)*u_star(i))
+        else
+          tau_mag(i) = u_star(i)**2
+          visc_ml = CS%vonKar * (temp1*tau_mag(i)) / (absf(i)*temp1 + (h_ml(i)+h_neglect)*u_star(i))
+        endif
         a_ml = visc_ml / (0.25*(hvel(i,k)+hvel(i,k-1) + h_neglect) * GV%H_to_Z + 0.5*I_amax*visc_ml)
 
         ! Choose the largest estimate of a_cpl, but these could be changed to be additive.
@@ -2142,6 +2156,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_vert_friction" ! This module's name.
   character(len=40)  :: thickness_units
+  real :: Kv_mks ! KVML in MKS
 
   if (associated(CS)) then
     call MOM_error(WARNING, "vertvisc_init called with an associated "// &
@@ -2180,7 +2195,9 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "The vintage of the order of arithmetic and expressions in the viscous "//&
                  "calculations.  Values below 20190101 recover the answers from the end of 2018, "//&
                  "while higher values use expressions that do not use an arbitrary hard-coded "//&
-                 "maximum viscous coupling coefficient  between layers.  "//&
+                 "maximum viscous coupling coefficient between layers.  Values below 20230601 "//&
+                 "recover a form of the viscosity within the mixed layer that breaks up the "//&
+                 "magnitude of the wind stress in some non-Boussinesq cases.  "//&
                  "If both VERT_FRICTION_2018_ANSWERS and VERT_FRICTION_ANSWER_DATE are "//&
                  "specified, the latter takes precedence.", default=default_answer_date)
 
@@ -2323,6 +2340,14 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
 
   CS%Kvml_invZ2 = 0.0
   if (GV%nkml < 1) then
+    call get_param(param_file, mdl, "KVML", Kv_mks, &
+                 "The scale for an extra kinematic viscosity in the mixed layer", &
+                 units="m2 s-1", default=-1.0, do_not_log=.true.)
+    if (Kv_mks >= 0.0) then
+      call MOM_error(WARNING, "KVML is a deprecated parameter. Use KV_ML_INVZ2 instead.")
+    else
+      Kv_mks = 0.0
+    endif
     call get_param(param_file, mdl, "KV_ML_INVZ2", CS%Kvml_invZ2, &
                  "An extra kinematic viscosity in a mixed layer of thickness HMIX_FIXED, "//&
                  "with the actual viscosity scaling as 1/(z*HMIX_FIXED)^2, where z is the "//&
@@ -2330,23 +2355,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
                  "transmitted through infinitesimally thin surface layers.  This is an "//&
                  "older option for numerical convenience without a strong physical basis, "//&
                  "and its use is now discouraged.", &
-                 units="m2 s-1", default=-1.0, scale=US%m2_s_to_Z2_T, do_not_log=.true.)
-    if (CS%Kvml_invZ2 < 0.0) then
-      call get_param(param_file, mdl, "KVML", CS%Kvml_invZ2, &
-                 "The scale for an extra kinematic viscosity in the mixed layer", &
-                 units="m2 s-1", default=0.0, scale=US%m2_s_to_Z2_T, do_not_log=.true.)
-      if (CS%Kvml_invZ2 >= 0.0) &
-        call MOM_error(WARNING, "KVML is a deprecated parameter. Use KV_ML_INVZ2 instead.")
-    endif
-    if (CS%Kvml_invZ2 < 0.0) CS%Kvml_invZ2 = 0.0
-    call log_param(param_file, mdl, "KV_ML_INVZ2", CS%Kvml_invZ2, &
-                 "An extra kinematic viscosity in a mixed layer of thickness HMIX_FIXED, "//&
-                 "with the actual viscosity scaling as 1/(z*HMIX_FIXED)^2, where z is the "//&
-                 "distance from the surface, to allow for finite wind stresses to be "//&
-                 "transmitted through infinitesimally thin surface layers.  This is an "//&
-                 "older option for numerical convenience without a strong physical basis, "//&
-                 "and its use is now discouraged.", &
-                 units="m2 s-1", default=0.0, unscale=US%Z2_T_to_m2_s)
+                 units="m2 s-1", default=Kv_mks, scale=US%m2_s_to_Z2_T)
   endif
 
   if (.not.CS%bottomdraglaw) then

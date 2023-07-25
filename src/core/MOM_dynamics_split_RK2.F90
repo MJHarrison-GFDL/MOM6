@@ -50,7 +50,7 @@ use MOM_grid,                  only : ocean_grid_type
 use MOM_hor_index,             only : hor_index_type
 use MOM_hor_visc,              only : horizontal_viscosity, hor_visc_CS
 use MOM_hor_visc,              only : hor_visc_init, hor_visc_end
-use MOM_interface_heights,     only : find_eta
+use MOM_interface_heights,     only : find_eta, thickness_to_dz
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
 use MOM_MEKE_types,            only : MEKE_type
 use MOM_open_boundary,         only : ocean_OBC_type, radiation_open_bdry_conds
@@ -322,6 +322,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: up  ! Predicted zonal velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vp  ! Predicted meridional velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV))  :: hp  ! Predicted thickness [H ~> m or kg m-2].
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV))  :: dz  ! Distance between the interfaces around a layer [Z ~> m]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: ueffA   ! Effective Area of U-Faces [H L ~> m2]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: veffA   ! Effective Area of V-Faces [H L ~> m2]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: u_bc_accel ! The summed zonal baroclinic accelerations
@@ -407,7 +408,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   if (CS%debug) then
     call MOM_state_chksum("Start predictor ", u, v, h, uh, vh, G, GV, US, symmetric=sym)
     call check_redundant("Start predictor u ", u, v, G, unscale=US%L_T_to_m_s)
-    call check_redundant("Start predictor uh ", uh, vh, G, unscale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
+    call check_redundant("Start predictor uh ", uh, vh, G, unscale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
   endif
 
   dyn_p_surf = associated(p_surf_begin) .and. associated(p_surf_end)
@@ -567,7 +568,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   if (CS%debug) then
     call uvchksum("before vertvisc: up", up, vp, G%HI, haloshift=0, symmetric=sym, scale=US%L_T_to_m_s)
   endif
-  call vertvisc_coef(up, vp, h, forces, visc, dt, G, GV, US, CS%vertvisc_CSp, CS%OBC, VarMix)
+  call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=1)
+  call vertvisc_coef(up, vp, h, dz, forces, visc, tv, dt, G, GV, US, CS%vertvisc_CSp, CS%OBC, VarMix)
   call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt, G, GV, US, CS%vertvisc_CSp)
   call cpu_clock_end(id_clock_vertvisc)
   if (showCallTree) call callTree_wayPoint("done with vertvisc_coef (step_MOM_dyn_split_RK2)")
@@ -641,16 +643,16 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
 
   if (CS%debug) then
     call uvchksum("Predictor 1 [uv]", up, vp, G%HI, haloshift=0, symmetric=sym, scale=US%L_T_to_m_s)
-    call hchksum(h, "Predictor 1 h", G%HI, haloshift=1, scale=GV%H_to_m)
+    call hchksum(h, "Predictor 1 h", G%HI, haloshift=1, scale=GV%H_to_MKS)
     call uvchksum("Predictor 1 [uv]h", uh, vh, G%HI,haloshift=2, &
-                  symmetric=sym, scale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
+                  symmetric=sym, scale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
 !   call MOM_state_chksum("Predictor 1", up, vp, h, uh, vh, G, GV, US, haloshift=1)
     call MOM_accel_chksum("Predictor accel", CS%CAu_pred, CS%CAv_pred, CS%PFu, CS%PFv, &
              CS%diffu, CS%diffv, G, GV, US, CS%pbce, CS%u_accel_bt, CS%v_accel_bt, symmetric=sym)
     call MOM_state_chksum("Predictor 1 init", u, v, h, uh, vh, G, GV, US, haloshift=1, &
                           symmetric=sym)
     call check_redundant("Predictor 1 up", up, vp, G, unscale=US%L_T_to_m_s)
-    call check_redundant("Predictor 1 uh", uh, vh, G, unscale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
+    call check_redundant("Predictor 1 uh", uh, vh, G, unscale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
   endif
 
 ! up <- up + dt_pred d/dz visc d/dz up
@@ -659,7 +661,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   if (CS%debug) then
     call uvchksum("0 before vertvisc: [uv]p", up, vp, G%HI,haloshift=0, symmetric=sym, scale=US%L_T_to_m_s)
   endif
-  call vertvisc_coef(up, vp, h, forces, visc, dt_pred, G, GV, US, CS%vertvisc_CSp, &
+  call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=1)
+  call vertvisc_coef(up, vp, h, dz, forces, visc, tv, dt_pred, G, GV, US, CS%vertvisc_CSp, &
                      CS%OBC, VarMix)
   call vertvisc(up, vp, h, forces, visc, dt_pred, CS%OBC, CS%AD_pred, CS%CDp, G, &
                 GV, US, CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot, waves=waves)
@@ -776,10 +779,10 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   if (CS%debug) then
     call MOM_state_chksum("Predictor ", up, vp, hp, uh, vh, G, GV, US, symmetric=sym)
     call uvchksum("Predictor avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, scale=US%L_T_to_m_s)
-    call hchksum(h_av, "Predictor avg h", G%HI, haloshift=0, scale=GV%H_to_m)
+    call hchksum(h_av, "Predictor avg h", G%HI, haloshift=0, scale=GV%H_to_MKS)
   ! call MOM_state_chksum("Predictor avg ", u_av, v_av, h_av, uh, vh, G, GV, US)
     call check_redundant("Predictor up ", up, vp, G, unscale=US%L_T_to_m_s)
-    call check_redundant("Predictor uh ", uh, vh, G, unscale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
+    call check_redundant("Predictor uh ", uh, vh, G, unscale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
   endif
 
 ! diffu = horizontal viscosity terms (u_av)
@@ -868,9 +871,9 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
 
   if (CS%debug) then
     call uvchksum("Corrector 1 [uv]", u, v, G%HI, haloshift=0, symmetric=sym, scale=US%L_T_to_m_s)
-    call hchksum(h, "Corrector 1 h", G%HI, haloshift=1, scale=GV%H_to_m)
+    call hchksum(h, "Corrector 1 h", G%HI, haloshift=1, scale=GV%H_to_MKS)
     call uvchksum("Corrector 1 [uv]h", uh, vh, G%HI, haloshift=2, &
-                  symmetric=sym, scale=GV%H_to_m*US%L_to_m**2*US%s_to_T)
+                  symmetric=sym, scale=GV%H_to_MKS*US%L_to_m**2*US%s_to_T)
   ! call MOM_state_chksum("Corrector 1", u, v, h, uh, vh, G, GV, US, haloshift=1)
     call MOM_accel_chksum("Corrector accel", CS%CAu, CS%CAv, CS%PFu, CS%PFv, &
                           CS%diffu, CS%diffv, G, GV, US, CS%pbce, CS%u_accel_bt, CS%v_accel_bt, &
@@ -880,7 +883,8 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   ! u <- u + dt d/dz visc d/dz u
   ! u_av <- u_av + dt d/dz visc d/dz u_av
   call cpu_clock_begin(id_clock_vertvisc)
-  call vertvisc_coef(u, v, h, forces, visc, dt, G, GV, US, CS%vertvisc_CSp, CS%OBC, VarMix)
+  call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=1)
+  call vertvisc_coef(u, v, h, dz, forces, visc, tv, dt, G, GV, US, CS%vertvisc_CSp, CS%OBC, VarMix)
   call vertvisc(u, v, h, forces, visc, dt, CS%OBC, CS%ADp, CS%CDp, G, GV, US, &
                 CS%vertvisc_CSp, CS%taux_bot, CS%tauy_bot,waves=waves)
   if (G%nonblocking_updates) then
@@ -1063,7 +1067,7 @@ subroutine step_MOM_dyn_split_RK2(u, v, h, tv, visc, Time_local, dt, forces, p_s
   if (CS%debug) then
     call MOM_state_chksum("Corrector ", u, v, h, uh, vh, G, GV, US, symmetric=sym)
     call uvchksum("Corrector avg [uv]", u_av, v_av, G%HI, haloshift=1, symmetric=sym, scale=US%L_T_to_m_s)
-    call hchksum(h_av, "Corrector avg h", G%HI, haloshift=1, scale=GV%H_to_m)
+    call hchksum(h_av, "Corrector avg h", G%HI, haloshift=1, scale=GV%H_to_MKS)
  !  call MOM_state_chksum("Corrector avg ", u_av, v_av, h_av, uh, vh, G, GV, US)
   endif
 
@@ -1246,14 +1250,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=48) :: thickness_units, flux_units, eta_rest_name
-  real :: H_rescale  ! A rescaling factor for thicknesses from the representation in a
-                     ! restart file to the internal representation in this run  [various units ~> 1]
-  real :: vel_rescale ! A rescaling factor for velocities from the representation in a
-                     ! restart file to the internal representation in this run  [various units ~> 1]
-  real :: uH_rescale ! A rescaling factor for thickness transports from the representation in a
-                     ! restart file to the internal representation in this run  [various units ~> 1]
-  real :: accel_rescale ! A rescaling factor for accelerations from the representation in a
-                     ! restart file to the internal representation in this run  [various units ~> 1]
   type(group_pass_type) :: pass_av_h_uvh
   logical :: debug_truncations
   logical :: read_uv, read_h2
@@ -1410,9 +1406,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
       CS%eta(i,j) = CS%eta(i,j) + h(i,j,k)
     enddo ; enddo ; enddo
     call set_initialized(CS%eta, trim(eta_rest_name), restart_CS)
-  elseif ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= 1.0)) then
-    H_rescale = 1.0 / GV%m_to_H_restart
-    do j=js,je ; do i=is,ie ; CS%eta(i,j) = H_rescale * CS%eta(i,j) ; enddo ; enddo
   endif
   ! Copy eta into an output array.
   do j=js,je ; do i=is,ie ; eta(i,j) = CS%eta(i,j) ; enddo ; enddo
@@ -1427,17 +1420,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
                               OBC=CS%OBC, BT=CS%barotropic_CSp, TD=thickness_diffuse_CSp)
     call set_initialized(CS%diffu, "diffu", restart_CS)
     call set_initialized(CS%diffv, "diffv", restart_CS)
-  else
-    if ( (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
-         (US%s_to_T_restart**2 /= US%m_to_L_restart) ) then
-      accel_rescale = US%s_to_T_restart**2 / US%m_to_L_restart
-      do k=1,nz ; do j=js,je ; do I=G%IscB,G%IecB
-        CS%diffu(I,j,k) = accel_rescale * CS%diffu(I,j,k)
-      enddo ; enddo ; enddo
-      do k=1,nz ; do J=G%JscB,G%JecB ; do i=is,ie
-        CS%diffv(i,J,k) = accel_rescale * CS%diffv(i,J,k)
-      enddo ; enddo ; enddo
-    endif
   endif
 
   if (.not. query_initialized(CS%u_av, "u2", restart_CS) .or. &
@@ -1446,11 +1428,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
     do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied ; CS%v_av(i,J,k) = v(i,J,k) ; enddo ; enddo ; enddo
     call set_initialized(CS%u_av, "u2", restart_CS)
     call set_initialized(CS%v_av, "v2", restart_CS)
-  elseif ( (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
-           (US%s_to_T_restart /= US%m_to_L_restart) ) then
-    vel_rescale = US%s_to_T_restart / US%m_to_L_restart
-    do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB ; CS%u_av(I,j,k) = vel_rescale * CS%u_av(I,j,k) ; enddo ; enddo ; enddo
-    do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied ; CS%v_av(i,J,k) = vel_rescale * CS%v_av(i,J,k) ; enddo ; enddo ; enddo
   endif
 
   if (CS%store_CAu) then
@@ -1504,15 +1481,6 @@ subroutine initialize_dyn_split_RK2(u, v, h, uh, vh, eta, Time, G, GV, US, param
       if (.not. query_initialized(CS%h_av, "h2", restart_CS)) then
         CS%h_av(:,:,:) = h(:,:,:)
         call set_initialized(CS%h_av, "h2", restart_CS)
-      elseif ((GV%m_to_H_restart /= 0.0) .and. (GV%m_to_H_restart /= 1.0)) then
-        H_rescale = 1.0 / GV%m_to_H_restart
-        do k=1,nz ; do j=js,je ; do i=is,ie ; CS%h_av(i,j,k) = H_rescale * CS%h_av(i,j,k) ; enddo ; enddo ; enddo
-      endif
-      if ( (GV%m_to_H_restart * US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
-           (US%s_to_T_restart /= (GV%m_to_H_restart * US%m_to_L_restart**2)) ) then
-        uH_rescale = US%s_to_T_restart / (GV%m_to_H_restart * US%m_to_L_restart**2)
-        do k=1,nz ; do j=js,je ; do I=G%IscB,G%IecB ; uh(I,j,k) = uH_rescale * uh(I,j,k) ; enddo ; enddo ; enddo
-        do k=1,nz ; do J=G%JscB,G%JecB ; do i=is,ie ; vh(i,J,k) = uH_rescale * vh(i,J,k) ; enddo ; enddo ; enddo
       endif
     endif
   endif

@@ -16,6 +16,7 @@ use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
 use MOM_forcing_type,  only : forcing, extractFluxes1d, forcing_SinglePointPrint
 use MOM_grid,          only : ocean_grid_type
 use MOM_interpolate,   only : init_external_field, time_interp_external, time_interp_external_init
+use MOM_interpolate,   only : external_field
 use MOM_io,            only : slasher
 use MOM_opacity,       only : set_opacity, opacity_CS, extract_optics_slice, extract_optics_fields
 use MOM_opacity,       only : optics_type, optics_nbands, absorbRemainingSW, sumSWoverBands
@@ -64,7 +65,7 @@ type, public :: diabatic_aux_CS ; private
                              !! is added with a temperature of the local SST.
   logical :: var_pen_sw      !<   If true, use one of the CHL_A schemes to determine the
                              !! e-folding depth of incoming shortwave radiation.
-  integer :: sbc_chl         !< An integer handle used in time interpolation of
+  type(external_field) :: sbc_chl   !< A handle used in time interpolation of
                              !! chlorophyll read from a file.
   logical ::  chl_from_file  !< If true, chl_a is read from a file.
 
@@ -223,7 +224,7 @@ end subroutine make_frazil
 
 !> This subroutine applies double diffusion to T & S, assuming no diapycnal mass
 !! fluxes, using a simple tridiagonal solver.
-subroutine differential_diffuse_T_S(h, T, S, Kd_T, Kd_S, dt, G, GV)
+subroutine differential_diffuse_T_S(h, T, S, Kd_T, Kd_S, tv, dt, G, GV)
   type(ocean_grid_type),   intent(in)    :: G    !< The ocean's grid structure
   type(verticalGrid_type), intent(in)    :: GV   !< The ocean's vertical grid structure
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
@@ -233,13 +234,15 @@ subroutine differential_diffuse_T_S(h, T, S, Kd_T, Kd_S, dt, G, GV)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(inout) :: S    !< Salinity [PSU] or [gSalt/kg], generically [S ~> ppt].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-                           intent(inout)    :: Kd_T !< The extra diffusivity of temperature due to
+                           intent(in)    :: Kd_T !< The extra diffusivity of temperature due to
                                                  !! double diffusion relative to the diffusivity of
                                                  !! diffusivity of density [Z2 T-1 ~> m2 s-1].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                            intent(in)    :: Kd_S !< The extra diffusivity of salinity due to
                                                  !! double diffusion relative to the diffusivity of
                                                  !! diffusivity of density [Z2 T-1 ~> m2 s-1].
+  type(thermo_var_ptrs),   intent(in)    :: tv   !< Structure containing pointers to any
+                                                 !! available thermodynamic fields.
   real,                    intent(in)    :: dt   !<  Time increment [T ~> s].
 
   ! local variables
@@ -827,7 +830,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr)
   type(ocean_grid_type),   intent(in) :: G           !< Grid type
   type(verticalGrid_type), intent(in) :: GV          !< ocean vertical grid structure
   type(unit_scale_type),   intent(in) :: US          !< A dimensional unit scaling type
-  real, dimension(3),      intent(in) :: Mixing_Energy !< Energy values for up to 3 MLDs [R Z L2 T-2 ~> J m-2]
+  real, dimension(3),      intent(in) :: Mixing_Energy !< Energy values for up to 3 MLDs [R Z3 T-2 ~> J m-2]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in) :: h           !< Layer thickness [H ~> m or kg m-2]
   type(thermo_var_ptrs),   intent(in) :: tv          !< Structure containing pointers to any
@@ -884,7 +887,7 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr)
   PE_Threshold_fraction = 1.e-4 !Fixed threshold of 0.01%, could be runtime.
 
   do iM=1,3
-    PE_threshold(iM) = Mixing_Energy(iM)/GV%g_earth
+    PE_threshold(iM) = Mixing_Energy(iM) / (US%L_to_Z**2*GV%g_Earth)
   enddo
 
   do j=js,je ; do i=is,ie
@@ -1554,7 +1557,9 @@ subroutine applyBoundaryFluxesInOut(CS, G, GV, US, dt, fluxes, optics, nsw, h, t
       ! netPen_rate is the netSW as a function of depth, but only the surface value is used here,
       ! in which case the values of dt, h, optics and H_limit_fluxes are irrelevant.  Consider
       ! writing a shorter and simpler variant to handle this very limited case.
-      ! call sumSWoverBands(G, GV, US, h2d(:,:), optics_nbands(optics), optics, j, dt, &
+      ! Find the vertical distances across layers.
+      ! call thickness_to_dz(h, tv, dz, j, G, GV)
+      ! call sumSWoverBands(G, GV, US, h2d, dz, optics_nbands(optics), optics, j, dt, &
       !                     H_limit_fluxes, .true., pen_SW_bnd_rate, netPen)
       do i=is,ie ; do nb=1,nsw ; netPen_rate(i) = netPen_rate(i) + pen_SW_bnd_rate(nb,i) ; enddo ; enddo
 
