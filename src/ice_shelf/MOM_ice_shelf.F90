@@ -328,10 +328,11 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
   G => CS%grid ; US => CS%US
   ISS => CS%ISS
   time_step = time_step_in
-
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; ied = G%ied ; jed = G%jed
   if (CS%data_override_shelf_fluxes .and. CS%active_shelf_dynamics) then
-    call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux, CS%Time, &
+    call data_override(G%Domain, 'shelf_sfc_mass_flux', fluxes_in%shelf_sfc_mass_flux(is:ie,js:je), CS%Time, &
                        scale=US%kg_m2s_to_RZ_T)
+    call pass_var(fluxes_in%shelf_sfc_mass_flux, G%domain, complete=.true.)
   endif
 
   if (CS%rotate_index) then
@@ -345,7 +346,6 @@ subroutine shelf_calc_flux(sfc_state_in, fluxes_in, Time, time_step_in, CS)
     fluxes => fluxes_in
   endif
   ! useful parameters
-  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec ; ied = G%ied ; jed = G%jed
   I_ZETA_N = 1.0 / ZETA_N
   I_LF = 1.0 / CS%Lat_fusion
   SC = CS%kv_molec/CS%kd_molec_salt
