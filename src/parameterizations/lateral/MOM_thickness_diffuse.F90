@@ -44,9 +44,9 @@ type, public :: thickness_diffuse_CS ; private
   real    :: Kh_eta_bg           !< Background isopycnal height diffusivity [L2 T-1 ~> m2 s-1]
   real    :: Kh_eta_vel          !< Velocity scale that is multiplied by the grid spacing to give
                                  !! the isopycnal height diffusivity [L T-1 ~> m s-1]
-  real    :: slope_max           !< Slopes steeper than slope_max are limited in some way [Z L-1 ~> nondim].
-  real    :: kappa_smooth        !< Vertical diffusivity used to interpolate more
-                                 !! sensible values of T & S into thin layers [Z2 T-1 ~> m2 s-1].
+  real    :: slope_max           !< Slopes steeper than slope_max are limited in some way [Z L-1 ~> nondim]
+  real    :: kappa_smooth        !< Vertical diffusivity used to interpolate more sensible values
+                                 !! of T & S into thin layers [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   logical :: thickness_diffuse   !< If true, interfaces heights are diffused.
   logical :: use_FGNV_streamfn   !< If true, use the streamfunction formulation of
                                  !! Ferrari et al., 2010, which effectively emphasizes
@@ -798,7 +798,7 @@ subroutine thickness_diffuse_full(h, e, Kh_u, Kh_v, tv, uhD, vhD, cg1, dt, G, GV
 
   if (use_EOS) then
     halo = 1 ! Default halo to fill is 1
-    call vert_fill_TS(h, tv%T, tv%S, CS%kappa_smooth*dt, T, S, G, GV, halo, larger_h_denom=.true.)
+    call vert_fill_TS(h, tv%T, tv%S, CS%kappa_smooth*dt, T, S, G, GV, US, halo, larger_h_denom=.true.)
   endif
 
   ! Rescale the thicknesses, perhaps using the specific volume.
@@ -2090,10 +2090,6 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
   real :: Stanley_coeff ! Coefficient relating the temperature gradient and sub-gridscale
                         ! temperature variance [nondim]
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
-  logical :: default_2018_answers ! The default setting for the various 2018_ANSWERS flags.
-  logical :: MEKE_GEOM_answers_2018  ! If true, use expressions in the MEKE_GEOMETRIC calculation
-                                  ! that recover the answers from the original implementation.
-                                  ! Otherwise, use expressions that satisfy rotational symmetry.
   integer :: i, j
 
   CS%initialized = .true.
@@ -2191,7 +2187,7 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
   call get_param(param_file, mdl, "KD_SMOOTH", CS%kappa_smooth, &
                  "A diapycnal diffusivity that is used to interpolate "//&
                  "more sensible values of T & S into thin layers.", &
-                 units="m2 s-1", default=1.0e-6, scale=US%m_to_Z**2*US%T_to_s)
+                 units="m2 s-1", default=1.0e-6, scale=GV%m2_s_to_HZ_T)
   call get_param(param_file, mdl, "KHTH_USE_FGNV_STREAMFUNCTION", CS%use_FGNV_streamfn, &
                  "If true, use the streamfunction formulation of "//&
                  "Ferrari et al., 2010, which effectively emphasizes "//&
@@ -2246,22 +2242,12 @@ subroutine thickness_diffuse_init(Time, G, GV, US, param_file, diag, CDp, CS)
     call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
-    call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
-                 "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=(default_answer_date<20190101))
-    call get_param(param_file, mdl, "MEKE_GEOMETRIC_2018_ANSWERS", MEKE_GEOM_answers_2018, &
-                 "If true, use expressions in the MEKE_GEOMETRIC calculation that recover the "//&
-                 "answers from the original implementation.  Otherwise, use expressions that "//&
-                 "satisfy rotational symmetry.", default=default_2018_answers)
-    ! Revise inconsistent default answer dates for MEKE_geometric.
-    if (MEKE_GEOM_answers_2018 .and. (default_answer_date >= 20190101)) default_answer_date = 20181231
-    if (.not.MEKE_GEOM_answers_2018 .and. (default_answer_date < 20190101)) default_answer_date = 20190101
     call get_param(param_file, mdl, "MEKE_GEOMETRIC_ANSWER_DATE", CS%MEKE_GEOM_answer_date, &
                  "The vintage of the expressions in the MEKE_GEOMETRIC calculation.  "//&
                  "Values below 20190101 recover the answers from the original implementation, "//&
-                 "while higher values use expressions that satisfy rotational symmetry.  "//&
-                 "If both MEKE_GEOMETRIC_2018_ANSWERS and MEKE_GEOMETRIC_ANSWER_DATE are "//&
-                 "specified, the latter takes precedence.", default=default_answer_date)
+                 "while higher values use expressions that satisfy rotational symmetry.", &
+                 default=default_answer_date, do_not_log=.not.GV%Boussinesq)
+    if (.not.GV%Boussinesq) CS%MEKE_GEOM_answer_date = max(CS%MEKE_GEOM_answer_date, 20230701)
   endif
 
   call get_param(param_file, mdl, "USE_KH_IN_MEKE", CS%Use_KH_in_MEKE, &
