@@ -3843,10 +3843,8 @@ subroutine update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
     h_neglect = GV%kg_m2_to_H * 1.0e-30 ; h_neglect_edge = GV%kg_m2_to_H * 1.0e-10
   endif
 
-  if (OBC%number_of_segments >= 1) then
-    call thickness_to_dz(h, tv, dz, G, GV, US)
-    call pass_var(dz, G%Domain)
-  endif
+  if (OBC%number_of_segments >= 1) call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=2)
+
 
   do n = 1, OBC%number_of_segments
     segment => OBC%segment(n)
