@@ -18,6 +18,7 @@ use MOM_file_parser, only : log_version
 use MOM_get_input, only : directories
 use MOM_grid, only : ocean_grid_type, isPointInCell
 use MOM_interface_heights, only : find_eta, dz_to_thickness, dz_to_thickness_simple
+use MOM_interface_heights, only : find_col_avg_SpV
 use MOM_io, only : file_exists, field_size, MOM_read_data, MOM_read_vector, slasher
 use MOM_open_boundary, only : ocean_OBC_type, open_boundary_init, set_tracer_data
 use MOM_open_boundary, only : OBC_NONE
@@ -607,8 +608,13 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     call initialize_segment_data(G, GV, US, OBC, PF)
 !     call open_boundary_config(G, US, PF, OBC)
     ! Call this once to fill boundary arrays from fixed values
-    if (.not. OBC%needs_IO_for_data)  &
+    if (.not. OBC%any_needs_IO_for_data)  then
+      if ((.not.GV%Boussinesq) .and. allocated(tv%SpV_avg)) then
+        call find_col_avg_SpV(h, tv%SpV_avg, tv, G, GV, US)
+        call pass_var(tv%SpV_avg,G%Domain)
+      endif
       call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
+    endif
 
     call get_param(PF, mdl, "OBC_USER_CONFIG", config, &
                  "A string that sets how the user code is invoked to set open boundary data: \n"//&
