@@ -159,6 +159,9 @@ type, public :: diabatic_CS ; private
                                      !! evaporated in one time-step [nondim].
   integer :: halo_TS_diff = 0        !< The temperature, salinity and thickness halo size that
                                      !! must be valid for the diffusivity calculations.
+  integer :: halo_diabatic = 0       !< The temperature, salinity, specific volume and thickness
+                                     !! halo size that must be valid for the diabatic calculations,
+                                     !! including vertical mixing and internal tide propagation.
   logical :: useKPP = .false.        !< use CVMix/KPP diffusivities and non-local transport
   logical :: KPPisPassive            !< If true, KPP is in passive mode, not changing answers.
   logical :: debug                   !< If true, write verbose checksums for debugging purposes.
@@ -388,8 +391,9 @@ subroutine diabatic(u, v, h, tv, Hml, fluxes, visc, ADp, CDp, dt, Time_end, &
     call set_int_tide_input(u, v, h, tv, fluxes, CS%int_tide_input, dt, G, GV, US, &
                             CS%int_tide_input_CSp)
 
-    call propagate_int_tide(h, tv, CS%int_tide_input%TKE_itidal_input, CS%int_tide_input%tideamp, &
-                            CS%int_tide_input%Nb, CS%int_tide_input%Rho_bot, dt, G, GV, US, CS%int_tide_CSp)
+    call propagate_int_tide(h, tv, CS%int_tide_input%Nb, CS%int_tide_input%Rho_bot, dt, &
+                            G, GV, US, CS%int_tide_input_CSp, CS%int_tide_CSp)
+
     if (showCallTree) call callTree_waypoint("done with propagate_int_tide (diabatic)")
   endif ! end CS%use_int_tides
 
@@ -2661,7 +2665,7 @@ subroutine extract_diabatic_member(CS, opacity_CSp, optics_CSp, evap_CFL_limit, 
   ! Constants within diabatic_CS
   if (present(evap_CFL_limit))        evap_CFL_limit = CS%evap_CFL_limit
   if (present(minimum_forcing_depth)) minimum_forcing_depth = CS%minimum_forcing_depth
-  if (present(diabatic_halo)) diabatic_halo = CS%halo_TS_diff
+  if (present(diabatic_halo)) diabatic_halo = CS%halo_diabatic
   if (present(use_KPP)) use_KPP = CS%use_KPP
 end subroutine extract_diabatic_member
 
@@ -3512,6 +3516,9 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
   call set_diffusivity_init(Time, G, GV, US, param_file, diag, CS%set_diff_CSp, CS%int_tide_CSp, &
                             halo_TS=CS%halo_TS_diff, double_diffuse=CS%double_diffuse, &
                             physical_OBL_scheme=physical_OBL_scheme)
+
+  CS%halo_diabatic = CS%halo_TS_diff
+  if (CS%use_int_tides) CS%halo_diabatic = max(CS%halo_TS_diff, 2)
 
   if (CS%useKPP .and. (CS%double_diffuse .and. .not.CS%use_CVMix_ddiff)) &
     call MOM_error(FATAL, 'diabatic_driver_init: DOUBLE_DIFFUSION (old method) does not work '//&
