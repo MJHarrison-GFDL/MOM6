@@ -22,7 +22,7 @@ use regrid_consts, only : coordinateMode, DEFAULT_COORDINATE_MODE
 use regrid_consts, only : REGRIDDING_LAYER, REGRIDDING_ZSTAR
 use regrid_consts, only : REGRIDDING_RHO, REGRIDDING_SIGMA
 use regrid_consts, only : REGRIDDING_ARBITRARY, REGRIDDING_SIGMA_SHELF_ZSTAR
-use regrid_consts, only : REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, REGRIDDING_ADAPTIVE
+use regrid_consts, only : REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, REGRIDDING_ADAPTIVE, REGRIDDING_HYCOM_LAT
 use regrid_interp, only : interp_CS_type, set_interp_scheme, set_interp_extrap, set_interp_answer_date
 
 use coord_zlike,  only : init_coord_zlike, zlike_CS, set_zlike_params, build_zstar_column, end_coord_zlike
@@ -31,6 +31,7 @@ use coord_rho,    only : init_coord_rho, rho_CS, set_rho_params, build_rho_colum
 use coord_rho,    only : old_inflate_layers_1d
 use coord_hycom,  only : init_coord_hycom, hycom_CS, set_hycom_params, build_hycom1_column, end_coord_hycom
 use coord_adapt,  only : init_coord_adapt, adapt_CS, set_adapt_params, build_adapt_column, end_coord_adapt
+use coord_hycom_lat,  only : init_coord_hycom_lat, hycom_CS_lat, set_hycom_lat_params, build_hycom1_lat_column, end_coord_hycom_lat
 use MOM_hybgen_regrid, only : hybgen_regrid, hybgen_regrid_CS, init_hybgen_regrid, end_hybgen_regrid
 use MOM_hybgen_regrid, only : write_Hybgen_coord_file
 
@@ -124,6 +125,7 @@ type, public :: regridding_CS ; private
   type(sigma_CS),  pointer :: sigma_CS  => null() !< Control structure for sigma coordinate generator
   type(rho_CS),    pointer :: rho_CS    => null() !< Control structure for rho coordinate generator
   type(hycom_CS),  pointer :: hycom_CS  => null() !< Control structure for hybrid coordinate generator
+  type(hycom_CS),  pointer :: hycom_lat_CS  => null() !< Control structure for hybrid_lat coordinate generator  
   type(adapt_CS),  pointer :: adapt_CS  => null() !< Control structure for adaptive coordinate generator
   type(hybgen_regrid_CS), pointer :: hybgen_CS => NULL() !< Control structure for hybgen regridding
 
@@ -151,6 +153,7 @@ character(len=*), parameter, public :: regriddingCoordinateModeDoc = &
                  " SIGMA - terrain following coordinates\n"//&
                  " RHO   - continuous isopycnal\n"//&
                  " HYCOM1 - HyCOM-like hybrid coordinate\n"//&
+                 " HYCOM_LAT - HyCOM-like hybrid coordinate with latitudinal dependence\n"//&                 
                  " HYBGEN - Hybrid coordinate from the Hycom hybgen code\n"//&
                  " ADAPTIVE - optimize for smooth neutral density surfaces"
 
@@ -564,6 +567,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     ! This is a work around to apparently needed to work with the from_Z initialization...  ???
     if (coordinateMode(coord_mode) == REGRIDDING_ZSTAR .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYCOM1 .or. &
+        coordinateMode(coord_mode) == REGRIDDING_HYCOM_LAT .or. &         
         coordinateMode(coord_mode) == REGRIDDING_HYBGEN .or. &
         coordinateMode(coord_mode) == REGRIDDING_ADAPTIVE) then
       ! Adjust target grid to be consistent with maximum_depth
@@ -665,6 +669,18 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     call set_hycom_params(CS%hycom_CS, only_improves=tmpLogical)
   endif
 
+  if (main_parameters .and. coordinateMode(coord_mode) == REGRIDDING_HYCOM_LAT) then
+    call get_param(param_file, mdl, "HYCOM_EQ_SCALE", tmpReal, &
+              "The meridional scale for transitioning hycom regridding parameters around the grid equator .", &
+              units="nondim",default=0.)
+    call set_hycom_lat_params(CS%hycom_lat_CS, eq_scale=tmpReal)
+    call get_param(param_file, mdl, "HYCOM_LAT_POWER", tmpReal, &
+         "The power of abs(y)/HYCOM_LAT_EQ_SCALE for the transition of regridding parameters "// &
+         "near the grid equator.",&
+          units="nondim",default=0.)
+    call set_hycom_lat_params(CS%hycom_lat_CS, lat_power=tmpReal)
+  endif
+  
   CS%use_hybgen_unmix = .false.
   if (coordinateMode(coord_mode) == REGRIDDING_HYBGEN) then
     call get_param(param_file, mdl, "USE_HYBGEN_UNMIX", CS%use_hybgen_unmix, &
@@ -831,6 +847,7 @@ subroutine end_regridding(CS)
   if (associated(CS%sigma_CS))  call end_coord_sigma(CS%sigma_CS)
   if (associated(CS%rho_CS))    call end_coord_rho(CS%rho_CS)
   if (associated(CS%hycom_CS))  call end_coord_hycom(CS%hycom_CS)
+  if (associated(CS%hycom_lat_CS))  call end_coord_hycom(CS%hycom_lat_CS)  
   if (associated(CS%adapt_CS))  call end_coord_adapt(CS%adapt_CS)
   if (associated(CS%hybgen_CS)) call end_hybgen_regrid(CS%hybgen_CS)
 
@@ -939,6 +956,9 @@ subroutine regridding_main( remapCS, CS, G, GV, US, h, tv, h_new, dzInterface, &
     case ( REGRIDDING_HYCOM1 )
       call build_grid_HyCOM1( G, GV, G%US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, &
                               frac_shelf_h, zScale=Z_to_H )
+    case ( REGRIDDING_HYCOM_LAT )
+      call build_grid_HyCOM_lat( G, GV, G%US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, &
+                              frac_shelf_h, zScale=Z_to_H )
     case ( REGRIDDING_HYBGEN )
       call hybgen_regrid(G, GV, G%US, h, nom_depth_H, tv, CS%hybgen_CS, dzInterface, PCM_cell)
       call calc_h_new_by_dz(CS, G, GV, h, dzInterface, h_new)
@@ -988,7 +1008,7 @@ subroutine regridding_preadjust_reqs(CS, do_conv_adj, do_hybgen_unmix, hybgen_CS
   select case ( CS%regridding_scheme )
 
     case ( REGRIDDING_ZSTAR, REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_SIGMA, REGRIDDING_ARBITRARY, &
-           REGRIDDING_HYCOM1, REGRIDDING_ADAPTIVE )
+           REGRIDDING_HYCOM1, REGRIDDING_HYCOM_LAT, REGRIDDING_ADAPTIVE )
       do_conv_adj = .false. ; do_hybgen_unmix = .false.
     case ( REGRIDDING_RHO )
       do_conv_adj = .true. ; do_hybgen_unmix = .false.
@@ -1725,6 +1745,109 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
 
 end subroutine build_grid_HyCOM1
 
+!> Builds a simple HyCOM-like grid with additional parameters controlling the maximum depth near
+!! the equator. 
+subroutine build_grid_HyCOM_lat( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, frac_shelf_h, zScale )
+  type(ocean_grid_type),                     intent(in)    :: G  !< Grid structure
+  type(verticalGrid_type),                   intent(in)    :: GV !< Ocean vertical grid structure
+  type(unit_scale_type),                     intent(in)    :: US !< A dimensional unit scaling type
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), intent(in)    :: h  !< Existing model thickness [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G)),          intent(in)    :: nom_depth_H !< The bathymetric depth of this column
+                                                                 !! relative to mean sea level or another locally
+                                                                 !! valid reference height, converted to thickness
+                                                                 !! units [H ~> m or kg m-2]
+  type(thermo_var_ptrs),                     intent(in)    :: tv !< Thermodynamics structure
+  type(remapping_CS),                        intent(in)    :: remapCS !< The remapping control structure
+  type(regridding_CS),                       intent(in)    :: CS !< Regridding control structure
+  real, dimension(SZI_(G),SZJ_(G),CS%nk),    intent(inout) :: h_new !< New layer thicknesses [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G),CS%nk+1),  intent(inout) :: dzInterface !< Changes in interface position
+                                                                 !! in thickness units [H ~> m or kg m-2]
+  real, dimension(SZI_(G),SZJ_(G)), optional, intent(in)   :: frac_shelf_h !< Fractional ice shelf
+                                                                 !! coverage [nondim]
+  real,                            optional, intent(in)    :: zScale !< Scaling factor from the target coordinate
+                                                                 !! resolution in Z to desired units for zInterface,
+                                                                 !! usually Z_to_H in which case it is in
+                                                                 !! units of [H Z-1 ~> nondim or kg m-3]
+
+  ! Local variables
+  real, dimension(SZK_(GV)+1) :: z_col  ! Source interface positions relative to the surface [H ~> m or kg m-2]
+  real, dimension(SZK_(GV))   :: p_col  ! Layer center pressure in the input column [R L2 T-2 ~> Pa]
+  real, dimension(CS%nk+1) :: z_col_new ! New interface positions relative to the surface [H ~> m or kg m-2]
+  real, dimension(CS%nk+1) :: dz_col    ! The realized change in z_col [H ~> m or kg m-2]
+  real :: nominalDepth    ! The nominal depth of the seafloor in thickness units [H ~> m or kg m-2]
+  real :: h_neglect, h_neglect_edge ! Negligible thicknesses used for remapping [H ~> m or kg m-2]
+  real :: z_top_col       ! The nominal height of the sea surface or ice-ocean interface
+                          ! in thickness units [H ~> m or kg m-2]
+  real :: totalThickness  ! The total thickness of the water column [H ~> m or kg m-2]
+  real :: y_fac  ! A latitudinally-dependent factor controlling nominal depths [nondim]
+  real :: Re_deg_rad ! A temporary array for equatorial scaling [L ~> m]
+  real :: deg_rad ! Conversion from degrees to radians
+  logical :: ice_shelf
+  real :: I_eq_scale ! inverse of equatorial scale [L-1 ~> m-1]
+  integer :: i, j, k, nki
+  real :: eq_pow
+
+  h_neglect = set_h_neglect(GV, CS%remap_answer_date, h_neglect_edge)
+  deg_rad = 4.0*atan(1.0)
+  Re_deg_rad=deg_Rad*G%Rad_Earth_L
+  I_eq_scale=CS%hycom_lat_CS%eq_scale  
+  eq_pow=CS%hycom_lat_CS%eq_power
+  
+  if (.not.CS%target_density_set) call MOM_error(FATAL, "build_grid_HyCOM_lat : "//&
+        "Target densities must be set before build_grid_HyCOM_lat is called.")
+
+  nki = min(GV%ke, CS%nk)
+  ice_shelf = present(frac_shelf_h)
+
+  ! Build grid based on target interface densities
+  do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
+    if (G%mask2dT(i,j)>0.) then
+
+      nominalDepth = nom_depth_H(i,j)
+
+      if (ice_shelf) then
+        totalThickness = 0.0
+        do k=1,GV%ke
+          totalThickness = totalThickness + h(i,j,k)
+        enddo
+        z_top_col = max(nominalDepth-totalThickness,0.0)
+      else
+        z_top_col = 0.0
+      endif
+
+      z_col(1) = z_top_col ! Work downward rather than bottom up
+      do K = 1, GV%ke
+        z_col(K+1) = z_col(K) + h(i,j,k)
+        p_col(k) = tv%P_Ref + CS%compressibility_fraction * &
+             ( 0.5 * ( z_col(K) + z_col(K+1) ) * (GV%H_to_RZ*GV%g_Earth) - tv%P_Ref )
+      enddo
+
+      y_fac = ((abs(G%y_T(i,j)*Re_deg_rad)*I_eq_scale))**eq_pow
+
+      call build_hycom_lat_column(CS%hycom_lat_CS, y_fac, remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
+           h(i,j,:), tv%T(i,j,:), tv%S(i,j,:), p_col, &
+           z_col, z_col_new, zScale=zScale, &
+           h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
+
+      ! Calculate the final change in grid position after blending new and old grids
+      call filtered_grid_motion( CS, GV%ke, z_col, z_col_new, dz_col )
+
+      ! This adjusts things robust to round-off errors
+      dz_col(:) = -dz_col(:)
+      call adjust_interface_motion( CS, GV%ke, h(i,j,:), dz_col(:) )
+
+      dzInterface(i,j,1:nki+1) = dz_col(1:nki+1)
+      if (nki<CS%nk) dzInterface(i,j,nki+2:CS%nk+1) = 0.
+
+    else ! on land
+      dzInterface(i,j,:) = 0.
+    endif ! mask2dT
+  enddo ; enddo ! i,j
+
+  call calc_h_new_by_dz(CS, G, GV, h, dzInterface, h_new)
+
+end subroutine build_grid_HyCOM_lat
+
 !> This subroutine builds an adaptive grid that follows density surfaces where
 !! possible, subject to constraints on the smoothness of interface heights.
 subroutine build_grid_adaptive(G, GV, US, h, nom_depth_H, tv, dzInterface, remapCS, CS)
@@ -1994,7 +2117,7 @@ function uniformResolution(nk,coordMode,maxDepth,rhoLight,rhoHeavy)
   scheme = coordinateMode(coordMode)
   select case ( scheme )
 
-    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, &
+    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM_LAT, REGRIDDING_HYBGEN, &
            REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_ADAPTIVE )
       uniformResolution(:) = maxDepth / real(nk)
 
@@ -2034,7 +2157,10 @@ subroutine initCoord(CS, GV, US, coord_mode, param_file)
     call init_coord_rho(CS%rho_CS, CS%nk, CS%ref_pressure, CS%target_density, CS%interp_CS)
   case (REGRIDDING_HYCOM1)
     call init_coord_hycom(CS%hycom_CS, CS%nk, CS%coordinateResolution, CS%target_density, &
-                          CS%interp_CS)
+         CS%interp_CS)
+  case (REGRIDDING_HYCOM_LAT)
+    call init_coord_hycom_lat(CS%hycom_lat_CS, CS%nk, CS%coordinateResolution, CS%target_density, &
+                          CS%interp_CS)    
   case (REGRIDDING_HYBGEN)
     call init_hybgen_regrid(CS%hybgen_CS, GV, US, param_file)
   case (REGRIDDING_ADAPTIVE)
@@ -2136,7 +2262,9 @@ subroutine set_regrid_max_depths( CS, max_depths, units_to_H )
   ! set max depths for coordinate
   select case (CS%regridding_scheme)
   case (REGRIDDING_HYCOM1)
-    call set_hycom_params(CS%hycom_CS, max_interface_depths=CS%max_interface_depths)
+     call set_hycom_params(CS%hycom_CS, max_interface_depths=CS%max_interface_depths)
+  case (REGRIDDING_HYCOM_LAT)
+    call set_hycom_lat_params(CS%hycom_lat_CS, max_interface_depths=CS%max_interface_depths)     
   end select
 end subroutine set_regrid_max_depths
 
@@ -2163,6 +2291,8 @@ subroutine set_regrid_max_thickness( CS, max_h, units_to_H )
   select case (CS%regridding_scheme)
   case (REGRIDDING_HYCOM1)
     call set_hycom_params(CS%hycom_CS, max_layer_thickness=CS%max_layer_thickness)
+  case (REGRIDDING_HYCOM_LAT)
+    call set_hycom_params(CS%hycom_lat_CS, max_layer_thickness=CS%max_layer_thickness)     
   end select
 end subroutine set_regrid_max_thickness
 
@@ -2321,7 +2451,7 @@ function getCoordinateUnits( CS )
   character(len=20)               :: getCoordinateUnits
 
   select case ( CS%regridding_scheme )
-    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, &
+    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM_LAT, REGRIDDING_HYBGEN, &
            REGRIDDING_ADAPTIVE )
       getCoordinateUnits = 'meter'
     case ( REGRIDDING_SIGMA_SHELF_ZSTAR )
@@ -2359,7 +2489,9 @@ function getCoordinateShortName( CS )
     case ( REGRIDDING_ARBITRARY )
       getCoordinateShortName = 'coordinate'
     case ( REGRIDDING_HYCOM1 )
-      getCoordinateShortName = 'z-rho'
+       getCoordinateShortName = 'z-rho'
+    case ( REGRIDDING_HYCOM_LAT )
+      getCoordinateShortName = 'z-rho(lat)'       
     case ( REGRIDDING_HYBGEN )
       getCoordinateShortName = 'hybrid'
     case ( REGRIDDING_ADAPTIVE )
@@ -2451,7 +2583,10 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
       call set_rho_params(CS%rho_CS, interp_CS=CS%interp_CS)
   case (REGRIDDING_HYCOM1)
     if (associated(CS%hycom_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
-      call set_hycom_params(CS%hycom_CS, interp_CS=CS%interp_CS)
+         call set_hycom_params(CS%hycom_CS, interp_CS=CS%interp_CS)
+  case (REGRIDDING_HYCOM_LAT)
+    if (associated(CS%hycom_lat_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
+      call set_hycom_lat_params(CS%hycom_lat_CS, interp_CS=CS%interp_CS)    
   case (REGRIDDING_HYBGEN)
     ! Do nothing for now.
   case (REGRIDDING_ADAPTIVE)
@@ -2511,7 +2646,7 @@ function getStaticThickness( CS, SSH, depth )
   real :: z, dz  ! Vertical positions and grid spacing [Z ~> m]
 
   select case ( CS%regridding_scheme )
-    case ( REGRIDDING_ZSTAR, REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, &
+    case ( REGRIDDING_ZSTAR, REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM_LAT, REGRIDDING_HYBGEN, &
            REGRIDDING_ADAPTIVE )
       if (depth>0.) then
         z = ssh
