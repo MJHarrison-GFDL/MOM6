@@ -31,7 +31,8 @@ use coord_rho,    only : init_coord_rho, rho_CS, set_rho_params, build_rho_colum
 use coord_rho,    only : old_inflate_layers_1d
 use coord_hycom,  only : init_coord_hycom, hycom_CS, set_hycom_params, build_hycom1_column, end_coord_hycom
 use coord_adapt,  only : init_coord_adapt, adapt_CS, set_adapt_params, build_adapt_column, end_coord_adapt
-use coord_hycom_lat,  only : init_coord_hycom_lat, hycom_CS_lat, set_hycom_lat_params, build_hycom1_lat_column, end_coord_hycom_lat
+use coord_hycom_lat,  only : init_coord_hycom_lat, hycom_lat_CS, set_hycom_lat_params
+use coord_hycom_lat,  only : build_hycom_lat_column, end_coord_hycom_lat
 use MOM_hybgen_regrid, only : hybgen_regrid, hybgen_regrid_CS, init_hybgen_regrid, end_hybgen_regrid
 use MOM_hybgen_regrid, only : write_Hybgen_coord_file
 
@@ -125,7 +126,7 @@ type, public :: regridding_CS ; private
   type(sigma_CS),  pointer :: sigma_CS  => null() !< Control structure for sigma coordinate generator
   type(rho_CS),    pointer :: rho_CS    => null() !< Control structure for rho coordinate generator
   type(hycom_CS),  pointer :: hycom_CS  => null() !< Control structure for hybrid coordinate generator
-  type(hycom_CS),  pointer :: hycom_lat_CS  => null() !< Control structure for hybrid_lat coordinate generator  
+  type(hycom_lat_CS),  pointer :: hycom_lat_CS  => null() !< Control structure for hybrid_lat coordinate generator
   type(adapt_CS),  pointer :: adapt_CS  => null() !< Control structure for adaptive coordinate generator
   type(hybgen_regrid_CS), pointer :: hybgen_CS => NULL() !< Control structure for hybgen regridding
 
@@ -153,7 +154,7 @@ character(len=*), parameter, public :: regriddingCoordinateModeDoc = &
                  " SIGMA - terrain following coordinates\n"//&
                  " RHO   - continuous isopycnal\n"//&
                  " HYCOM1 - HyCOM-like hybrid coordinate\n"//&
-                 " HYCOM_LAT - HyCOM-like hybrid coordinate with latitudinal dependence\n"//&                 
+                 " HYCOM_LAT - HyCOM-like hybrid coordinate with latitudinal dependence\n"//&
                  " HYBGEN - Hybrid coordinate from the Hycom hybgen code\n"//&
                  " ADAPTIVE - optimize for smooth neutral density surfaces"
 
@@ -477,7 +478,8 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     call MOM_read_data(trim(fileName), trim(varName), rho_target)
     varName = trim( extractWord(trim(string(8:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
-      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
+      call set_hycom_lat_params(CS%hycom_lat_CS, fnc1Str=trim(string((index(trim(string),'FNC1:')+5):)))
+      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)) , dz )
     else ! Read dz from file
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
@@ -567,7 +569,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     ! This is a work around to apparently needed to work with the from_Z initialization...  ???
     if (coordinateMode(coord_mode) == REGRIDDING_ZSTAR .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYCOM1 .or. &
-        coordinateMode(coord_mode) == REGRIDDING_HYCOM_LAT .or. &         
+        coordinateMode(coord_mode) == REGRIDDING_HYCOM_LAT .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYBGEN .or. &
         coordinateMode(coord_mode) == REGRIDDING_ADAPTIVE) then
       ! Adjust target grid to be consistent with maximum_depth
@@ -675,12 +677,14 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
               units="nondim",default=0.)
     call set_hycom_lat_params(CS%hycom_lat_CS, eq_scale=tmpReal)
     call get_param(param_file, mdl, "HYCOM_LAT_POWER", tmpReal, &
-         "The power of abs(y)/HYCOM_LAT_EQ_SCALE for the transition of regridding parameters "// &
-         "near the grid equator.",&
-          units="nondim",default=0.)
+         "The equatorial transition for the HYCOM minimum depths varies with  cosine of latitude raised to "//&
+         "HYCOM_LAT_POWER (>=1).  ",&
+         units="nondim",default=1.0)
+    if (tmpReal<0.) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
+        "HYCOM_LAT_POWER MUST BE GREATER THAN OR EQUAL TO ONE.")
     call set_hycom_lat_params(CS%hycom_lat_CS, lat_power=tmpReal)
   endif
-  
+
   CS%use_hybgen_unmix = .false.
   if (coordinateMode(coord_mode) == REGRIDDING_HYBGEN) then
     call get_param(param_file, mdl, "USE_HYBGEN_UNMIX", CS%use_hybgen_unmix, &
@@ -847,7 +851,7 @@ subroutine end_regridding(CS)
   if (associated(CS%sigma_CS))  call end_coord_sigma(CS%sigma_CS)
   if (associated(CS%rho_CS))    call end_coord_rho(CS%rho_CS)
   if (associated(CS%hycom_CS))  call end_coord_hycom(CS%hycom_CS)
-  if (associated(CS%hycom_lat_CS))  call end_coord_hycom(CS%hycom_lat_CS)  
+  if (associated(CS%hycom_lat_CS))  call end_coord_hycom_lat(CS%hycom_lat_CS)
   if (associated(CS%adapt_CS))  call end_coord_adapt(CS%adapt_CS)
   if (associated(CS%hybgen_CS)) call end_hybgen_regrid(CS%hybgen_CS)
 
@@ -1746,7 +1750,7 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
 end subroutine build_grid_HyCOM1
 
 !> Builds a simple HyCOM-like grid with additional parameters controlling the maximum depth near
-!! the equator. 
+!! the equator.
 subroutine build_grid_HyCOM_lat( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, frac_shelf_h, zScale )
   type(ocean_grid_type),                     intent(in)    :: G  !< Grid structure
   type(verticalGrid_type),                   intent(in)    :: GV !< Ocean vertical grid structure
@@ -1780,19 +1784,21 @@ subroutine build_grid_HyCOM_lat( G, GV, US, h, nom_depth_H, tv, h_new, dzInterfa
                           ! in thickness units [H ~> m or kg m-2]
   real :: totalThickness  ! The total thickness of the water column [H ~> m or kg m-2]
   real :: y_fac  ! A latitudinally-dependent factor controlling nominal depths [nondim]
-  real :: Re_deg_rad ! A temporary array for equatorial scaling [L ~> m]
   real :: deg_rad ! Conversion from degrees to radians
+  real :: pi_2
   logical :: ice_shelf
+  real :: L_fac ! length factor [L ~> m]
   real :: I_eq_scale ! inverse of equatorial scale [L-1 ~> m-1]
   integer :: i, j, k, nki
   real :: eq_pow
 
   h_neglect = set_h_neglect(GV, CS%remap_answer_date, h_neglect_edge)
-  deg_rad = 4.0*atan(1.0)
-  Re_deg_rad=deg_Rad*G%Rad_Earth_L
-  I_eq_scale=CS%hycom_lat_CS%eq_scale  
-  eq_pow=CS%hycom_lat_CS%eq_power
-  
+  pi_2 = atan(1.0)
+  deg_rad = (4.0*pi_2)/180.
+
+  I_eq_scale=CS%hycom_lat_CS%eq_scale
+  eq_pow=CS%hycom_lat_CS%lat_power
+
   if (.not.CS%target_density_set) call MOM_error(FATAL, "build_grid_HyCOM_lat : "//&
         "Target densities must be set before build_grid_HyCOM_lat is called.")
 
@@ -1822,7 +1828,9 @@ subroutine build_grid_HyCOM_lat( G, GV, US, h, nom_depth_H, tv, h_new, dzInterfa
              ( 0.5 * ( z_col(K) + z_col(K+1) ) * (GV%H_to_RZ*GV%g_Earth) - tv%P_Ref )
       enddo
 
-      y_fac = ((abs(G%y_T(i,j)*Re_deg_rad)*I_eq_scale))**eq_pow
+      L_fac = min(G%Rad_earth_L*abs(G%geolatT(i,j)*deg_rad)*I_eq_scale,1.0)
+
+      y_fac = cos(L_fac*pi_2)**eq_pow
 
       call build_hycom_lat_column(CS%hycom_lat_CS, y_fac, remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
            h(i,j,:), tv%T(i,j,:), tv%S(i,j,:), p_col, &
@@ -2160,7 +2168,7 @@ subroutine initCoord(CS, GV, US, coord_mode, param_file)
          CS%interp_CS)
   case (REGRIDDING_HYCOM_LAT)
     call init_coord_hycom_lat(CS%hycom_lat_CS, CS%nk, CS%coordinateResolution, CS%target_density, &
-                          CS%interp_CS)    
+                          CS%interp_CS)
   case (REGRIDDING_HYBGEN)
     call init_hybgen_regrid(CS%hybgen_CS, GV, US, param_file)
   case (REGRIDDING_ADAPTIVE)
@@ -2264,7 +2272,7 @@ subroutine set_regrid_max_depths( CS, max_depths, units_to_H )
   case (REGRIDDING_HYCOM1)
      call set_hycom_params(CS%hycom_CS, max_interface_depths=CS%max_interface_depths)
   case (REGRIDDING_HYCOM_LAT)
-    call set_hycom_lat_params(CS%hycom_lat_CS, max_interface_depths=CS%max_interface_depths)     
+    call set_hycom_lat_params(CS%hycom_lat_CS, max_interface_depths=CS%max_interface_depths)
   end select
 end subroutine set_regrid_max_depths
 
@@ -2292,7 +2300,7 @@ subroutine set_regrid_max_thickness( CS, max_h, units_to_H )
   case (REGRIDDING_HYCOM1)
     call set_hycom_params(CS%hycom_CS, max_layer_thickness=CS%max_layer_thickness)
   case (REGRIDDING_HYCOM_LAT)
-    call set_hycom_params(CS%hycom_lat_CS, max_layer_thickness=CS%max_layer_thickness)     
+    call set_hycom_lat_params(CS%hycom_lat_CS, max_layer_thickness=CS%max_layer_thickness)
   end select
 end subroutine set_regrid_max_thickness
 
@@ -2491,7 +2499,7 @@ function getCoordinateShortName( CS )
     case ( REGRIDDING_HYCOM1 )
        getCoordinateShortName = 'z-rho'
     case ( REGRIDDING_HYCOM_LAT )
-      getCoordinateShortName = 'z-rho(lat)'       
+      getCoordinateShortName = 'z-rho(lat)'
     case ( REGRIDDING_HYBGEN )
       getCoordinateShortName = 'hybrid'
     case ( REGRIDDING_ADAPTIVE )
@@ -2586,7 +2594,7 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
          call set_hycom_params(CS%hycom_CS, interp_CS=CS%interp_CS)
   case (REGRIDDING_HYCOM_LAT)
     if (associated(CS%hycom_lat_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
-      call set_hycom_lat_params(CS%hycom_lat_CS, interp_CS=CS%interp_CS)    
+      call set_hycom_lat_params(CS%hycom_lat_CS, interp_CS=CS%interp_CS)
   case (REGRIDDING_HYBGEN)
     ! Do nothing for now.
   case (REGRIDDING_ADAPTIVE)
