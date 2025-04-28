@@ -203,6 +203,8 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
   character(len=200) :: inputdir, fileName, longString
   character(len=320) :: message ! Temporary strings
   character(len=12) :: expected_units, alt_units ! Temporary strings
+  character(len=32) :: fnc1Str
+
   logical :: tmpLogical, do_sum, main_parameters
   logical :: coord_is_state_dependent, ierr
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
@@ -474,8 +476,8 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     call MOM_read_data(trim(fileName), trim(varName), rho_target)
     varName = trim( extractWord(trim(string(8:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
-      call set_hycom_params(CS%hycom_CS, fnc1Str=trim(string((index(trim(string),'FNC1:')+5):)))
-      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)) , dz )
+      fnc1Str=trim(string((index(trim(string),'FNC1:')+5):))
+      call dz_function1( fnc1str , dz )
     else ! Read dz from file
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
@@ -669,6 +671,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
               default=.false.)
     call set_hycom_params(CS%hycom_CS, use_equatorial_grid=tmpLogical)
     if (tmpLogical) then
+      call set_hycom_params(CS%hycom_CS, fnc1str=fnc1Str)
       call get_param(param_file, mdl, "HYCOM_EQ_SCALE", tmpReal, &
                 "The meridional scale for transitioning hycom regridding parameters around the grid equator .", &
                 units="me",default=0.)
