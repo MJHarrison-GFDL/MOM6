@@ -12,7 +12,7 @@ use regrid_interp,     only : DEGREE_MAX
 implicit none ; private
 
 !> Control structure containing required parameters for the HyCOM coordinate
-type, public :: hycom_CS ; private
+type, public :: hycom_CS
 
   !> Number of layers/levels in generated grid
   integer :: nk
@@ -34,11 +34,58 @@ type, public :: hycom_CS ; private
 
   !> Interpolation control structure
   type(interp_CS_type) :: interp_CS
+
+  !> If true, adjust the minimum depths near the equator
+
+  logical :: use_equatorial_grid = .false.
+
+  !> Equatorial function parameter [ L ~> m]
+  real :: eq_scale
+
+  !> Equatorial function parameter [nondim]
+  real :: eq_power
+
+  character(len=32) :: fnc1Str=''  !< Parameter string for dz_function
 end type hycom_CS
 
 public init_coord_hycom, set_hycom_params, build_hycom1_column, end_coord_hycom
 
 contains
+
+!> Parses a string and generates a dz(:) profile that goes like k**power.
+subroutine dz_function2( string, dz, y_fac )
+  character(len=*),   intent(in)    :: string !< String with list of parameters in form
+                                              !! dz_min, H_total, power, precision
+  real, dimension(:), intent(inout) :: dz     !< Profile of nominal thicknesses [m] or other units
+  real, intent(in)                   :: y_fac
+  ! Local variables
+  integer :: nk, k
+  real    :: dz_min  ! minimum grid spacing [m] or other units
+  real    :: power   ! A power to raise the relative position in index space [nondim]
+  real    :: prec    ! The precision with which positions are returned [m] or other units
+  real    :: H_total ! The sum of the nominal thicknesses [m] or other units
+
+  nk = size(dz) ! Number of cells
+  prec = -1024.
+  read( string, *) dz_min, H_total, power, prec
+  if (prec == -1024.) call MOM_error(FATAL,"dz_function1: "// &
+       "Problem reading FNC1: string  ="//trim(string))
+  ! scale power accordingly
+  power=max(power*(1.0-y_fac),1.0)
+  power=anint(power/prec)*prec
+  ! Create profile of ( dz - dz_min )
+  do k = 1, nk
+    dz(k) = (real(k-1)/real(nk-1))**power
+  enddo
+  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / sum(dz) ) ! Rescale to so total is H_total
+  dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
+  dz(:) = ( H_total - real(nk) * dz_min ) * ( dz(:) / sum(dz) ) ! Rescale to so total is H_total
+  dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
+  dz(nk) = dz(nk) + ( H_total - sum( dz(:) + dz_min ) ) ! Adjust bottommost layer
+  dz(:) = anint( dz(:) / prec ) * prec ! Rounds to precision prec
+  dz(:) = dz(:) + dz_min ! Finally add in the constant dz_min
+
+end subroutine dz_function2
 
 !> Initialise a hycom_CS with pointers to parameters
 subroutine init_coord_hycom(CS, nk, coordinateResolution, target_density, interp_CS)
@@ -74,12 +121,17 @@ subroutine end_coord_hycom(CS)
 end subroutine end_coord_hycom
 
 !> This subroutine can be used to set the parameters for the coord_hycom module
-subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS)
+subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS, use_equatorial_grid,&
+     eq_power, eq_scale, fnc1Str)
   type(hycom_CS),                 pointer    :: CS !< Coordinate control structure
   real, dimension(:),   optional, intent(in) :: max_interface_depths !< Maximum depths of interfaces [H ~> m or kg m-2]
   real, dimension(:),   optional, intent(in) :: max_layer_thickness  !< Maximum thicknesses of layers [H ~> m or kg m-2]
   logical, optional, intent(in) :: only_improves !< If true, an interface only moves if it improves the density fit
   type(interp_CS_type), optional, intent(in) :: interp_CS !< Controls for interpolation
+  logical, optional, intent(in)              :: use_equatorial_grid !< If true, adjust the grid near the equator.
+  real,    optional, intent(in) :: eq_scale !< Equatorial scale [L ~> m ]
+  real,    optional, intent(in) :: eq_power !< power of equatorial function [nondim]
+  character(len=*), optional, intent(in) :: fnc1str
 
   if (.not. associated(CS)) call MOM_error(FATAL, "set_hycom_params: CS not associated")
 
@@ -100,11 +152,26 @@ subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_
   if (present(only_improves)) CS%only_improves = only_improves
 
   if (present(interp_CS)) CS%interp_CS = interp_CS
+
+  if (present(use_equatorial_grid)) CS%use_equatorial_grid = use_equatorial_grid
+
+  if (present(eq_scale)) then
+    CS%eq_scale = eq_scale
+  endif
+
+  if (present(eq_power)) then
+    CS%eq_power = eq_power
+  endif
+
+  if (present(fnc1Str)) then
+    CS%fnc1Str = fnc1Str
+  endif
+
 end subroutine set_hycom_params
 
 !> Build a HyCOM coordinate column
 subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, depth, h, T, S, p_col, &
-                               z_col, z_col_new, zScale, h_neglect, h_neglect_edge)
+                               z_col, z_col_new, zScale, h_neglect, h_neglect_edge, y_fac)
   type(hycom_CS),        intent(in)    :: CS    !< Coordinate control structure
   type(remapping_CS),    intent(in)    :: remapCS !< Remapping parameters and options
   type(EOS_type),        intent(in)    :: eqn_of_state !< Equation of state structure
@@ -123,7 +190,7 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, depth, h, T, S, p_
                                                 !! cell reconstruction [H ~> m or kg m-2]
   real,        optional, intent(in)    :: h_neglect_edge !< A negligibly small width for the purpose of
                                                 !! edge value calculation [H ~> m or kg m-2]
-
+  real,        optional, intent(in)    :: y_fac !! Latitude factor controlling transition to equatorial grid
   ! Local variables
   integer   :: k
   real, dimension(nz)      :: rho_col   ! Layer densities in a column [R ~> kg m-3]
@@ -143,12 +210,18 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, depth, h, T, S, p_
   real :: nominal_z ! Nominal depth of interface when using z* [H ~> m or kg m-2]
   logical :: maximum_depths_set ! If true, the maximum depths of interface have been set.
   logical :: maximum_h_set      ! If true, the maximum layer thicknesses have been set.
+  real, dimension(CS%nk)      :: dz_nom   ! nominal thicknesses [H ~> m or kg m-2]
 
   maximum_depths_set = allocated(CS%max_interface_depths)
   maximum_h_set = allocated(CS%max_layer_thickness)
 
   z_scale = 1.0 ; if (present(zScale)) z_scale = zScale
 
+  dz_nom(:)=CS%coordinateResolution(:)
+  if (present(y_fac)) then
+    ! Locally calculate a target resolution based on the latitude parameter and the
+    if (CS%fnc1Str(1:5) == 'FNC1:') call dz_function2(CS%fnc1Str, dz_nom, y_fac)
+  endif
   if (CS%only_improves .and. nz == CS%nk) then
     call build_hycom1_target_anomaly(CS, remapCS, eqn_of_state, CS%nk, depth, &
         h, T, S, p_col, rho_col, RiA_ini, h_neglect, h_neglect_edge)
@@ -192,7 +265,7 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, depth, h, T, S, p_
   nominal_z = 0.
   stretching = z_col(nz+1) / depth ! Stretches z* to z
   do k = 2, CS%nk+1
-    nominal_z = nominal_z + (z_scale * CS%coordinateResolution(k-1)) * stretching
+    nominal_z = nominal_z + (z_scale * dz_nom(k-1)) * stretching
     z_col_new(k) = max( z_col_new(k), nominal_z )
     z_col_new(k) = min( z_col_new(k), z_col(nz+1) )
   enddo
