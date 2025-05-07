@@ -703,7 +703,8 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
          if (.not. allocated(dz)) allocate(dz(ke))
          call dz_function1( fnc1str , dz )
       else ! Read dz from file
-         if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
+         if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)// &
+              ", initialize_regridding: HYBRID "// &
               "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
          call MOM_read_data(trim(fileName), trim(varName), dz)
       endif

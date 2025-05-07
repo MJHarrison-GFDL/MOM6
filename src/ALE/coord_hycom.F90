@@ -17,7 +17,7 @@ type, public :: hycom_CS
   !> Number of layers/levels in generated grid
   integer :: nk
 
-  !> Nominal near-surface resolution [Z ~> m]
+  !> Nominal near-surface resolution [H ~> m]
   real, allocatable, dimension(:) :: coordinateResolution
 
   !> Nominal density of interfaces [R ~> kg m-3]
@@ -54,6 +54,7 @@ type, public :: hycom_CS
   !> Equatorial function parameter [nondim]
   real :: eq_power
 
+  !> Equatorial near-surfae resolution [H ~> kg m-2]
   real, allocatable, dimension(:) :: dz_eq
 
 end type hycom_CS
@@ -99,19 +100,22 @@ subroutine end_coord_hycom(CS)
 end subroutine end_coord_hycom
 
 !> This subroutine can be used to set the parameters for the coord_hycom module
-subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS, use_equatorial_grid,&
-     eq_power, eq_scale, dz_eq, max_interface_depths_eq, max_layer_thickness_eq, target_density_eq)
+subroutine set_hycom_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS, &
+     use_equatorial_grid, eq_power, eq_scale, dz_eq, max_interface_depths_eq, &
+     max_layer_thickness_eq, target_density_eq)
   type(hycom_CS),                 pointer    :: CS !< Coordinate control structure
   real, dimension(:),   optional, intent(in) :: max_interface_depths !< Maximum depths of interfaces [H ~> m or kg m-2]
   real, dimension(:),   optional, intent(in) :: max_layer_thickness  !< Maximum thicknesses of layers [H ~> m or kg m-2]
   logical, optional, intent(in) :: only_improves !< If true, an interface only moves if it improves the density fit
   type(interp_CS_type), optional, intent(in) :: interp_CS !< Controls for interpolation
   logical, optional, intent(in)              :: use_equatorial_grid !< If true, adjust the grid near the equator.
-  real,    optional, intent(in) :: eq_scale !< Equatorial scale [L ~> m ]
-  real,    optional, intent(in) :: eq_power !< power of equatorial function [nondim]
-  real, optional, dimension(:), intent(in) :: dz_eq
-  real, dimension(:),   optional, intent(in) :: max_interface_depths_eq !< Maximum depths of interfaces [H ~> m or kg m-2]
-  real, dimension(:),   optional, intent(in) :: max_layer_thickness_eq  !< Maximum thicknesses of layers [H ~> m or kg m-2]
+  real,    optional, intent(in) :: eq_scale !< Equatorial transition length scale [L ~> m ]
+  real,    optional, intent(in) :: eq_power !< power of equatorial cosine transition function [nondim]
+  real, optional, dimension(:), intent(in) :: dz_eq !< Equatorial minimum layer thicknesses [H ~> m or kg m-2]
+  real, dimension(:),   optional, intent(in) :: max_interface_depths_eq !< Maximum depths of interfaces
+                                            !! [H ~> m or kg m-2]
+  real, dimension(:),   optional, intent(in) :: max_layer_thickness_eq  !< Maximum thicknesses of layers
+                                            !! [H ~> m or kg m-2]
   real, dimension(:),   optional, intent(in) :: target_density_eq  !< Maximum thicknesses of layers [H ~> m or kg m-2]
 
   if (.not. associated(CS)) call MOM_error(FATAL, "set_hycom_params: CS not associated")
@@ -191,7 +195,8 @@ subroutine build_hycom1_column(CS, remapCS, eqn_of_state, nz, depth, h, T, S, p_
                                                 !! cell reconstruction [H ~> m or kg m-2]
   real,        optional, intent(in)    :: h_neglect_edge !< A negligibly small width for the purpose of
                                                 !! edge value calculation [H ~> m or kg m-2]
-  real,        optional, intent(in)    :: y_fac !! Latitude factor controlling transition to equatorial grid
+  real,        optional, intent(in)    :: y_fac !< Latitude factor controlling transition to equatorial grid
+                                                !! [nondim]
   ! Local variables
   integer   :: k
   real, dimension(nz)      :: rho_col   ! Layer densities in a column [R ~> kg m-3]
