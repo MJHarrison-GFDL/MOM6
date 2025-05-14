@@ -30,6 +30,7 @@ use coord_sigma,  only : init_coord_sigma, sigma_CS, set_sigma_params, build_sig
 use coord_rho,    only : init_coord_rho, rho_CS, set_rho_params, build_rho_column, end_coord_rho
 use coord_rho,    only : old_inflate_layers_1d
 use coord_hycom,  only : init_coord_hycom, hycom_CS, set_hycom_params, build_hycom1_column, end_coord_hycom
+use coord_hycom,  only : get_hycom_params
 use coord_adapt,  only : init_coord_adapt, adapt_CS, set_adapt_params, build_adapt_column, end_coord_adapt
 use MOM_hybgen_regrid, only : hybgen_regrid, hybgen_regrid_CS, init_hybgen_regrid, end_hybgen_regrid
 use MOM_hybgen_regrid, only : write_Hybgen_coord_file
@@ -203,6 +204,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
   character(len=200) :: inputdir, fileName, longString
   character(len=320) :: message ! Temporary strings
   character(len=12) :: expected_units, alt_units ! Temporary strings
+  character(len=32) :: fnc1Str
   logical :: tmpLogical, do_sum, main_parameters
   logical :: coord_is_state_dependent, ierr
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
@@ -474,7 +476,8 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     call MOM_read_data(trim(fileName), trim(varName), rho_target)
     varName = trim( extractWord(trim(string(8:)), 3) )
     if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
-      call dz_function1( trim(string((index(trim(string),'FNC1:')+5):)), dz )
+      fnc1Str=trim(string((index(trim(string),'FNC1:')+5):))
+      call dz_function1( fnc1str , dz )
     else ! Read dz from file
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
@@ -663,7 +666,88 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
               "When regridding, an interface is only moved if this improves the fit to the target density.", &
               default=.false.)
     call set_hycom_params(CS%hycom_CS, only_improves=tmpLogical)
+    call get_param(param_file, mdl, "HYCOM1_EQUATORIAL_GRID", tmpLogical, &
+         "If true, use a separately defined equatorial grid functions near the equator \n"//&
+         "and smoothly transition from the global grid.", &
+         default=.false.)
+    call set_hycom_params(CS%hycom_CS, use_equatorial_grid=tmpLogical)
+    if (tmpLogical) then
+      call get_param(param_file, mdl, 'ALE_COORDINATE_CONFIG_EQ', string, &
+                 "Determines how to specify the coordinate "//&
+                 "resolution. Valid options are:\n"//&
+                 " HYBRID:string - read from a file. The string specifies\n"//&
+                 "               the filename and two variable names, separated\n"//&
+                 "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
+                 "               HYBRID:vgrid.nc,sigma2,dz",&
+                 default='none')
+
+      allocate(rho_target(ke+1))
+      fileName = trim( extractWord(trim(string(8:)), 1) )
+      if (fileName(1:1)/='.' .and. filename(1:1)/='/') fileName = trim(inputdir) // trim( fileName )
+      if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
+           "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string)//")")
+      varName = trim( extractWord(trim(string(8:)), 2) )
+      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
+           "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+      call MOM_read_data(trim(fileName), trim(varName), rho_target)
+      call set_hycom_params(CS%hycom_CS, target_density_eq=US%kg_m3_to_R*rho_target)
+      deallocate(rho_target)
+      varName = trim( extractWord(trim(string(8:)), 3) )
+      if (.not. allocated(dz)) allocate(dz(ke))
+      if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
+         fnc1Str=trim(string((index(trim(string),'FNC1:')+5):))
+         call dz_function1( fnc1str , dz )
+      else ! Read dz from file
+         if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)// &
+              ", initialize_regridding: HYBRID "// &
+              "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string)//")")
+         call MOM_read_data(trim(fileName), trim(varName), dz)
+      endif
+
+      call set_hycom_params(CS%hycom_CS, dz_eq=dz)
+
+      call get_param(param_file, mdl, "MAXIMUM_INT_DEPTH_CONFIG_EQ", string, &
+                 "Determines how to specify the maximum "//&
+                 "interface depths near the equator. Valid options are:\n"//&
+                 " FNC1:string - FNC1:dz_min,H_total,power,precision",&
+                 default='none')
+      fnc1Str=trim(string((index(trim(string),'FNC1:')+5):))
+      call dz_function1( fnc1str , dz)
+      if (.not. allocated(z_max)) allocate(z_max(ke+1))
+      z_max(1)=0.0;do k=2,ke+1; z_max(k)=z_max(k-1)+dz(k-1); enddo
+      call set_hycom_params(CS%hycom_CS, max_interface_depths_eq=z_max)
+      call log_param(param_file, mdl, "!MAXIMUM_INT_DEPTHS_EQ", z_max, &
+           trim(message), units=coordinateUnits(coord_mode))
+      call get_param(param_file, mdl, "MAX_LAYER_THICKNESS_CONFIG_EQ", string, &
+                 "Determines how to specify the maximum "//&
+                 "thickness near the equator. Valid options are:\n"//&
+                 " FNC1:string - FNC1:dz_min,H_total,power,precision",&
+                 default='none')
+      fnc1Str=trim(string((index(trim(string),'FNC1:')+5):))
+      call dz_function1( fnc1str , dz )
+      call set_hycom_params(CS%hycom_CS, max_layer_thickness_eq=dz)
+      call log_param(param_file, mdl, "!MAXIMUM_THICKNESS_EQ", dz, &
+           trim(message), units=coordinateUnits(coord_mode))
+      call get_param(param_file, mdl, "HYCOM_EQ_SCALE", tmpReal, &
+                "The meridional scale for transitioning hycom regridding parameters around the grid equator .", &
+                units="m",default=0.)
+      call set_hycom_params(CS%hycom_CS, eq_scale=tmpReal)
+      call get_param(param_file, mdl, "HYCOM_EQ_POWER", tmpReal, &
+           "The equatorial transition for the HYCOM minimum depths varies with  cosine of latitude raised to "//&
+           "HYCOM_EQ_POWER (>0).  ",&
+           units="nondim",default=1.0)
+      if (tmpReal<=0.) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: "// &
+          "HYCOM_EQ_POWER MUST BE GREATER THAN ZERO.")
+      call set_hycom_params(CS%hycom_CS, eq_power=tmpReal)
+      deallocate(dz,z_max)
+    else ! HYCOM1_EQUATORIAL_GRID
+      call set_hycom_params(CS%hycom_CS, eq_scale=0.0)
+      call set_hycom_params(CS%hycom_CS, eq_power=0.0)
+    endif
   endif
+
+
+
 
   CS%use_hybgen_unmix = .false.
   if (coordinateMode(coord_mode) == REGRIDDING_HYBGEN) then
@@ -1667,7 +1751,14 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
   real :: z_top_col       ! The nominal height of the sea surface or ice-ocean interface
                           ! in thickness units [H ~> m or kg m-2]
   real :: totalThickness  ! The total thickness of the water column [H ~> m or kg m-2]
-  logical :: ice_shelf
+  real :: y_fac  ! A latitudinally-dependent factor controlling nominal depths [nondim]
+  real :: deg_rad ! Conversion from degrees to radians
+  real :: pi_2  ! one half of pi
+  real :: L_fac ! length factor [L ~> m]
+  real :: eq_scale ! Equatorial radius [L ~> m]
+  real :: I_eq_scale ! inverse of equatorial scale [L-1 ~> m-1]
+  real :: eq_pow ! the power scaling for the equatorial transition
+  logical :: ice_shelf, use_equatorial_grid
   integer :: i, j, k, nki
 
   h_neglect = set_h_neglect(GV, CS%remap_answer_date, h_neglect_edge)
@@ -1678,6 +1769,16 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
   nki = min(GV%ke, CS%nk)
   ice_shelf = present(frac_shelf_h)
 
+  pi_2 = 2.0*atan(1.0)
+  deg_rad = pi_2/90.
+
+  use_equatorial_grid=.false.
+  call get_hycom_params(CS%hycom_CS,use_equatorial_grid=use_equatorial_grid)
+
+  if  (use_equatorial_grid) then
+    call get_hycom_params(CS%hycom_CS,eq_scale=eq_scale,eq_power=eq_pow)
+    I_eq_scale=1.0/eq_scale
+  endif
   ! Build grid based on target interface densities
   do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
     if (G%mask2dT(i,j)>0.) then
@@ -1701,11 +1802,22 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
              ( 0.5 * ( z_col(K) + z_col(K+1) ) * (GV%H_to_RZ*GV%g_Earth) - tv%P_Ref )
       enddo
 
-      call build_hycom1_column(CS%hycom_CS, remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
+      if (use_equatorial_grid) then
+         ! The latitudinal factor varies linearly from 0 to 1 between the equator and the equatorial
+         ! radius determined by eq_scale .  The equatorial transition function is equal to
+         ! cosine(L*pi_2) raised to eq_power.
+         L_fac = min(G%Rad_earth_L*abs(G%geolatT(i,j)*deg_rad)*I_eq_scale,1.0)
+         y_fac = (cos(L_fac*pi_2))**eq_pow
+         call build_hycom1_column(CS%hycom_CS, remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
+           h(i,j,:), tv%T(i,j,:), tv%S(i,j,:), p_col, &
+           z_col, z_col_new, zScale=zScale, &
+           h_neglect=h_neglect, h_neglect_edge=h_neglect_edge,y_fac=y_fac)
+      else
+         call build_hycom1_column(CS%hycom_CS, remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
            h(i,j,:), tv%T(i,j,:), tv%S(i,j,:), p_col, &
            z_col, z_col_new, zScale=zScale, &
            h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
-
+      endif
       ! Calculate the final change in grid position after blending new and old grids
       call filtered_grid_motion( CS, GV%ke, z_col, z_col_new, dz_col )
 
