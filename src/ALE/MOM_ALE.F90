@@ -165,8 +165,9 @@ contains
 !! before the main time integration loop to initialize the regridding stuff.
 !! We read the MOM_input file to register the values of different
 !! regridding/remapping parameters.
-subroutine ALE_init( param_file, GV, US, max_depth, CS)
+subroutine ALE_init( param_file, G, GV, US, max_depth, CS)
   type(param_file_type),   intent(in) :: param_file !< Parameter file
+  type(ocean_grid_type), intent(in) :: G         !< Ocean horizontal grid structure
   type(verticalGrid_type), intent(in) :: GV         !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in) :: US         !< A dimensional unit scaling type
   real,                    intent(in) :: max_depth  !< The maximum depth of the ocean [Z ~> m].
@@ -205,7 +206,7 @@ subroutine ALE_init( param_file, GV, US, max_depth, CS)
                  default=.false.)
 
   ! Initialize and configure regridding
-  call ALE_initRegridding(GV, US, max_depth, param_file, mdl, CS%regridCS)
+  call ALE_initRegridding(G, GV, US, max_depth, param_file, mdl, CS%regridCS)
   call regridding_preadjust_reqs(CS%regridCS, CS%do_conv_adj, CS%use_hybgen_unmix, hybgen_CS=hybgen_regridCS)
 
   ! Initialize and configure remapping that is orchestrated by ALE.
@@ -1648,13 +1649,15 @@ end subroutine TS_PPM_edge_values
 
 
 !> Initializes regridding for the main ALE algorithm
-subroutine ALE_initRegridding(GV, US, max_depth, param_file, mdl, regridCS)
+subroutine ALE_initRegridding(G, GV, US, max_depth, param_file, mdl, regridCS)
+  type(ocean_grid_type), intent(in)    :: G
   type(verticalGrid_type), intent(in)  :: GV         !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in)  :: US         !< A dimensional unit scaling type
   real,                    intent(in)  :: max_depth  !< The maximum depth of the ocean [Z ~> m].
   type(param_file_type),   intent(in)  :: param_file !< parameter file
   character(len=*),        intent(in)  :: mdl        !< Name of calling module
   type(regridding_CS),     intent(out) :: regridCS   !< Regridding parameters and work arrays
+
   ! Local variables
   character(len=30) :: coord_mode
 
@@ -1664,7 +1667,7 @@ subroutine ALE_initRegridding(GV, US, max_depth, param_file, mdl, regridCS)
                  trim(regriddingCoordinateModeDoc), &
                  default=DEFAULT_COORDINATE_MODE, fail_if_missing=.true.)
 
-  call initialize_regridding(regridCS, GV, US, max_depth, param_file, mdl, coord_mode, '', '')
+  call initialize_regridding(regridCS, GV, US, max_depth, param_file, mdl, coord_mode, '', '', G)
 
 end subroutine ALE_initRegridding
 

@@ -12,7 +12,7 @@ use regrid_interp,     only : DEGREE_MAX
 implicit none ; private
 
 !> Control structure containing required parameters for the HyCOM coordinate
-type, public :: hycom_2D_CS ; private
+type, public :: hycom_2D_CS !; private
 
   !> Number of layers/levels in generated grid
   integer :: nk
@@ -21,19 +21,19 @@ type, public :: hycom_2D_CS ; private
   integer :: ng
 
   !> Nominal near-surface resolution [Z ~> m]
-  real, allocatable, dimension(:,:,:) :: coordinateResolution
+  real, allocatable, dimension(:,:) :: coordinateResolution
 
   !> Nominal density of interfaces [R ~> kg m-3]
-  real, allocatable, dimension(:,:,:) :: target_density
+  real, allocatable, dimension(:,:) :: target_density
 
-  !> Mask identifier [nondim]
+  !> A 2-dimensonal (i,j) identifier for the grid type (1..ng) [nondim]
   real, allocatable, dimension(:,:) :: rmask
 
   !> Maximum depths of interfaces [H ~> m or kg m-2]
-  real, allocatable, dimension(:,:) :: max_interface_depths
+  real, allocatable, dimension(:) :: max_interface_depths
 
   !> Maximum thicknesses of layers [H ~> m or kg m-2]
-  real, allocatable, dimension(:,:) :: max_layer_thickness
+  real, allocatable, dimension(:) :: max_layer_thickness
 
   !> If true, an interface only moves if it improves the density fit
   logical :: only_improves = .false.
@@ -65,13 +65,13 @@ subroutine init_coord_hycom_2d(CS, nk, ng, coordinateResolution, target_density,
   if (size(coordinateResolution,1) /= CS%nk) &
        call MOM_error(FATAL, "set_hycom_2d_params: coordinateResolution inconsistent size")
   if (size(coordinateResolution,2) /= CS%ng) &
-       call MOM_error(FATAL, "set_hycom_2d_params: coordinateResolution inconsistent size")  
+       call MOM_error(FATAL, "set_hycom_2d_params: coordinateResolution inconsistent size")
   CS%coordinateResolution(:,:) = coordinateResolution(:,:)
-  if (size(targetDensity,1) /= CS%nk+1) &
+  if (size(target_density,1) /= CS%nk+1) &
        call MOM_error(FATAL, "set_hycom_2d_params: target_density inconsistent size")
-  if (size(targetDensity,2) /= CS%ng) &
-       call MOM_error(FATAL, "set_hycom_2d_params: target_density inconsistent size")    
-  CS%target_density(:)       = target_density(:)
+  if (size(target_density,2) /= CS%ng) &
+       call MOM_error(FATAL, "set_hycom_2d_params: target_density inconsistent size")
+  CS%target_density(:,:)       = target_density(:,:)
   CS%interp_CS               = interp_CS
 
 end subroutine init_coord_hycom_2d
@@ -90,10 +90,10 @@ subroutine end_coord_hycom_2d(CS)
 end subroutine end_coord_hycom_2d
 
 !> This subroutine can be used to set the parameters for the coord_hycom module
-subroutine set_hycom_2d_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS, eq_scale, lat_power)
+subroutine set_hycom_2d_params(CS, max_interface_depths, max_layer_thickness, only_improves, interp_CS)
   type(hycom_2d_CS),                 pointer    :: CS !< Coordinate control structure
-  real, dimension(:,:),   optional, intent(in) :: max_interface_depths !< Maximum depths of interfaces [H ~> m or kg m-2]
-  real, dimension(:,:),   optional, intent(in) :: max_layer_thickness  !< Maximum thicknesses of layers [H ~> m or kg m-2]
+  real, dimension(:),   optional, intent(in) :: max_interface_depths !< Maximum depths of interfaces [H ~> m or kg m-2]
+  real, dimension(:),   optional, intent(in) :: max_layer_thickness  !< Maximum thicknesses of layers [H ~> m or kg m-2]
   logical, optional, intent(in) :: only_improves !< If true, an interface only moves if it improves the density fit
   type(interp_CS_type), optional, intent(in) :: interp_CS !< Controls for interpolation
 
@@ -102,19 +102,15 @@ subroutine set_hycom_2d_params(CS, max_interface_depths, max_layer_thickness, on
   if (present(max_interface_depths)) then
     if (size(max_interface_depths,1) /= CS%nk+1) &
          call MOM_error(FATAL, "set_hycom_params: max_interface_depths inconsistent size")
-    if (size(max_interface_depths,2) /= CS%ng) &
-      call MOM_error(FATAL, "set_hycom_params: max_interface_depths inconsistent size")    
-    allocate(CS%max_interface_depths(CS%nk+1,CS%ng))
-    CS%max_interface_depths(:,:) = max_interface_depths(:,:)
+    allocate(CS%max_interface_depths(CS%nk+1))
+    CS%max_interface_depths(:) = max_interface_depths(:)
   endif
 
   if (present(max_layer_thickness)) then
     if (size(max_layer_thickness,1) /= CS%nk) &
          call MOM_error(FATAL, "set_hycom_params: max_layer_thickness inconsistent size")
-    if (size(max_layer_thickness,2) /= CS%ng) &
-      call MOM_error(FATAL, "set_hycom_params: max_layer_thickness inconsistent size")    
-    allocate(CS%max_layer_thickness(CS%nk,C%ng))
-    CS%max_layer_thickness(:,:) = max_layer_thickness(:,:)
+    allocate(CS%max_layer_thickness(CS%nk))
+    CS%max_layer_thickness(:) = max_layer_thickness(:)
   endif
 
   if (present(only_improves)) CS%only_improves = only_improves
@@ -146,13 +142,13 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
                                                 !! edge value calculation [H ~> m or kg m-2]
 
   ! Local variables
-  integer   :: k
+  integer   :: k, i, j
   real, dimension(nz)      :: rho_col   ! Layer densities in a column [R ~> kg m-3]
   real, dimension(CS%nk)   :: h_col_new ! New layer thicknesses [H ~> m or kg m-2]
   real, dimension(CS%nk)   :: h1_col_new ! New layer thicknesses [H ~> m or kg m-2]
   real, dimension(CS%nk)   :: h2_col_new ! New layer thicknesses [H ~> m or kg m-2]
   real, dimension(CS%nk+1)   :: z1_col_new ! New layer interfacel positions relative to the surface [H ~> m or kg m-2]
-  real, dimension(CS%nk+1)   :: z2_col_new ! New layer interface positions relative to the surface  [H ~> m or kg m-2]      
+  real, dimension(CS%nk+1)   :: z2_col_new ! New layer interface positions relative to the surface  [H ~> m or kg m-2]
   real, dimension(CS%nk)   :: r_col_new ! New layer densities [R ~> kg m-3]
   real, dimension(CS%nk)   :: T_col_new ! New layer temperatures [C ~> degC]
   real, dimension(CS%nk)   :: S_col_new ! New layer salinities [S ~> ppt]
@@ -168,6 +164,7 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   real :: nominal_z ! Nominal depth of interface when using z* [H ~> m or kg m-2]
   logical :: maximum_depths_set ! If true, the maximum depths of interface have been set.
   logical :: maximum_h_set      ! If true, the maximum layer thicknesses have been set.
+  real :: wt1, wt2
 
   maximum_depths_set = allocated(CS%max_interface_depths)
   maximum_h_set = allocated(CS%max_layer_thickness)
@@ -175,7 +172,7 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   z_scale = 1.0 ; if (present(zScale)) z_scale = zScale
 
   if (CS%only_improves .and. nz == CS%nk) then
-    call build_hycom1_target_anomaly(CS, remapCS, eqn_of_state, CS%nk, depth, &
+    call build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, CS%nk, depth, &
         h, T, S, p_col, rho_col, RiA_ini, h_neglect, h_neglect_edge)
   else
     ! Work bottom recording potential density
@@ -198,7 +195,7 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   wt1=k-rmask
   h_col_new(:)=wt1*h1_col_new(:)+(1-wt1)*h2_col_new(:)
   z_col_new(:)=wt1*z1_col_new(:)+(1-wt1)*z2_col_new(:)
-  
+
   if (CS%only_improves .and. nz == CS%nk) then
     ! Only move an interface if it improves the density fit
     z_1 = 0.5 * ( z_col(1) + z_col(2) )
@@ -210,7 +207,7 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
     ! Remap from original h and T,S to get T,S_col_new
     call remapping_core_h(remapCS, nz, h(:), T, CS%nk, h_col_new, T_col_new)
     call remapping_core_h(remapCS, nz, h(:), S, CS%nk, h_col_new, S_col_new)
-    call build_hycom1_target_anomaly(CS, remapCS, eqn_of_state, CS%nk, depth, &
+    call build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, CS%nk, depth, &
         h_col_new, T_col_new, S_col_new, p_col_new, r_col_new, RiA_new, h_neglect, h_neglect_edge)
     do k= 2,CS%nk
       if     ( abs(RiA_ini(K)) <= abs(RiA_new(K)) .and. z_col(K) > z_col_new(K-1) .and. &
@@ -224,8 +221,9 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   ! as deep as a nominal target z* grid
   nominal_z = 0.
   stretching = z_col(nz+1) / depth ! Stretches z* to z
+  i=anint(rmask);  j=min(i+1,CS%ng)
   do k = 2, CS%nk+1
-    nominal_z = nominal_z + (z_scale * CS%coordinateResolution(k-1)) * stretching * y_fac
+    nominal_z = nominal_z + (z_scale * (wt1*CS%coordinateResolution(k-1,i) + (1.-wt1)*CS%coordinateResolution(k-1,j))* stretching)
     z_col_new(k) = max( z_col_new(k), nominal_z )
     z_col_new(k) = min( z_col_new(k), z_col(nz+1) )
   enddo
@@ -243,7 +241,7 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
 end subroutine build_hycom_2d_column
 
 !> Calculate interface density anomaly w.r.t. the target.
-subroutine build_hycom_2d_target_anomaly(CS, rmask, remapCS, eqn_of_state, nz, depth, h, T, S, p_col, &
+subroutine build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, nz, depth, h, T, S, p_col, &
                                        R, RiAnom, h_neglect, h_neglect_edge)
   type(hycom_2d_CS),        intent(in)  :: CS     !< Coordinate control structure
   real,                  intent(in)  :: rmask   !< region mask
@@ -265,6 +263,7 @@ subroutine build_hycom_2d_target_anomaly(CS, rmask, remapCS, eqn_of_state, nz, d
                                                 !! edge value calculation [H ~> m or kg m-2]
   ! Local variables
   integer   :: degree,k, g1, g2
+  real      :: wt1, wt2
   real, dimension(nz)   :: rho_col ! Layer densities in a column [R ~> kg m-3]
   real, dimension(nz,2) :: ppoly_E ! Polynomial edge values [R ~> kg m-3]
   real, dimension(nz,2) :: ppoly_S ! Polynomial edge slopes [R H-1]
@@ -282,20 +281,21 @@ subroutine build_hycom_2d_target_anomaly(CS, rmask, remapCS, eqn_of_state, nz, d
                              degree, h_neglect, h_neglect_edge)
 
   R(1) = rho_col(1)
-  g1=anint(rmask);g2=min(g1+1,C$%ng)
-  RiAnom(1) = ppoly_E(1,1) - 0.5*(CS%target_density(1,g1)+CS%target_density(1,g2))
+  g1=anint(rmask);g2=min(g1+1,CS%ng)
+  wt1=g1-rmask;wt2=(1.-wt1)
+  RiAnom(1) = ppoly_E(1,1) - (wt1*CS%target_density(1,g1)+wt2*CS%target_density(1,g2))
   do k= 2,nz
     R(k) = rho_col(k)
-    if (ppoly_E(k-1,2) > 0.5*(CS%target_density(k,g1)+CS%target_density(k,g2))) then
-      RiAnom(k) = ppoly_E(k-1,2) - 0.5*(CS%target_density(k,g1)+CS%target_density(k,g2))  !interface is heavier than target
-    elseif (ppoly_E(k,1) < 0.5*(CS%target_density(k,g1)+CS%target_density(k,g2))) then
-      RiAnom(k) = ppoly_E(k,1)   - 0.5*(CS%target_density(1,g1)+CS%target_density(1,g2))  !interface is lighter than target
+    if (ppoly_E(k-1,2) > (wt1*CS%target_density(k,g1)+wt2*CS%target_density(k,g2))) then
+      RiAnom(k) = ppoly_E(k-1,2) - (wt1*CS%target_density(k,g1)+wt2*CS%target_density(k,g2))  !interface is heavier than target
+    elseif (ppoly_E(k,1) < (wt1*CS%target_density(k,g1)+wt2*CS%target_density(k,g2))) then
+      RiAnom(k) = ppoly_E(k,1)   - (wt1*CS%target_density(1,g1)+wt2*CS%target_density(1,g2))  !interface is lighter than target
     else
       RiAnom(k) = 0.0  !interface spans the target
     endif
   enddo
-  RiAnom(nz+1) = ppoly_E(nz,2) - 0.5*(CS%target_density(nz+1,g1)+CS%target_density(nz+1,g2))
+  RiAnom(nz+1) = ppoly_E(nz,2) - (wt1*CS%target_density(nz+1,g1)+wt2*CS%target_density(nz+1,g2))
 
-end subroutine build_hycom_2d_target_anomaly
+end subroutine build_hycom1_target_anomaly
 
 end module coord_hycom_2d

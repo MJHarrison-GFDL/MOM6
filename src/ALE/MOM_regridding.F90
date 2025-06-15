@@ -22,7 +22,7 @@ use regrid_consts, only : coordinateMode, DEFAULT_COORDINATE_MODE
 use regrid_consts, only : REGRIDDING_LAYER, REGRIDDING_ZSTAR
 use regrid_consts, only : REGRIDDING_RHO, REGRIDDING_SIGMA
 use regrid_consts, only : REGRIDDING_ARBITRARY, REGRIDDING_SIGMA_SHELF_ZSTAR
-use regrid_consts, only : REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, REGRIDDING_ADAPTIVE, REGRIDDING_HYCOM_2D
+use regrid_consts, only : REGRIDDING_HYCOM1, REGRIDDING_HYBGEN, REGRIDDING_ADAPTIVE, REGRIDDING_HYCOM1_2D
 use regrid_interp, only : interp_CS_type, set_interp_scheme, set_interp_extrap, set_interp_answer_date
 
 use coord_zlike,  only : init_coord_zlike, zlike_CS, set_zlike_params, build_zstar_column, end_coord_zlike
@@ -31,7 +31,8 @@ use coord_rho,    only : init_coord_rho, rho_CS, set_rho_params, build_rho_colum
 use coord_rho,    only : old_inflate_layers_1d
 use coord_hycom,  only : init_coord_hycom, hycom_CS, set_hycom_params, build_hycom1_column, end_coord_hycom
 use coord_adapt,  only : init_coord_adapt, adapt_CS, set_adapt_params, build_adapt_column, end_coord_adapt
-use coord_hycom_lat,  only : init_coord_hycom_lat, hycom_CS_lat, set_hycom_lat_params, build_hycom1_lat_column, end_coord_hycom_lat
+use coord_hycom_2d,  only : init_coord_hycom_2d, hycom_2d_CS, set_hycom_2d_params, build_hycom_2d_column, end_coord_hycom_2d
+
 use MOM_hybgen_regrid, only : hybgen_regrid, hybgen_regrid_CS, init_hybgen_regrid, end_hybgen_regrid
 use MOM_hybgen_regrid, only : write_Hybgen_coord_file
 
@@ -46,12 +47,17 @@ implicit none ; private
 
 !> Regridding control structure
 type, public :: regridding_CS ; private
+   !< A gridded array of identifiers
+   !! used to apply different grid parameters to each grid cell (HYCOM1-only)
+   real, dimension(:,:), allocatable :: grid_mask
+   integer :: ng
 
   !> This array is set by function setCoordinateResolution()
   !! It contains the "resolution" or delta coordinate of the target
   !! coordinate.  It has the units of the target coordinate, e.g.
   !! [Z ~> m] for z*, [nondim] for sigma, etc.
   real, dimension(:), allocatable :: coordinateResolution
+  real, dimension(:,:), allocatable :: coordinateResolution_2d
 
   !> This is a scaling factor that restores coordinateResolution to values in
   !! the natural units for output, perhaps [nondim]
@@ -63,6 +69,7 @@ type, public :: regridding_CS ; private
   !!  target_density(k+1) = coordinateResolution(k) + coordinateResolution(k)
   !! It is only used in "rho" or "Hycom" mode.
   real, dimension(:), allocatable :: target_density
+  real, dimension(:,:), allocatable :: target_density_2d
 
   !> A flag to indicate that the target_density arrays has been filled with data.
   logical :: target_density_set = .false.
@@ -125,7 +132,7 @@ type, public :: regridding_CS ; private
   type(sigma_CS),  pointer :: sigma_CS  => null() !< Control structure for sigma coordinate generator
   type(rho_CS),    pointer :: rho_CS    => null() !< Control structure for rho coordinate generator
   type(hycom_CS),  pointer :: hycom_CS  => null() !< Control structure for hybrid coordinate generator
-  type(hycom_CS),  pointer :: hycom_lat_CS  => null() !< Control structure for hybrid_lat coordinate generator  
+  type(hycom_2D_CS),  pointer :: hycom_2D_CS  => null() !< Control structure for hybrid_2d coordinate generator
   type(adapt_CS),  pointer :: adapt_CS  => null() !< Control structure for adaptive coordinate generator
   type(hybgen_regrid_CS), pointer :: hybgen_CS => NULL() !< Control structure for hybgen regridding
 
@@ -153,7 +160,7 @@ character(len=*), parameter, public :: regriddingCoordinateModeDoc = &
                  " SIGMA - terrain following coordinates\n"//&
                  " RHO   - continuous isopycnal\n"//&
                  " HYCOM1 - HyCOM-like hybrid coordinate\n"//&
-                 " HYCOM_LAT - HyCOM-like hybrid coordinate with latitudinal dependence\n"//&                 
+                 " HYCOM1_2D - HyCOM-like hybrid coordinate with latitudinal dependence\n"//&
                  " HYBGEN - Hybrid coordinate from the Hycom hybgen code\n"//&
                  " ADAPTIVE - optimize for smooth neutral density surfaces"
 
@@ -186,7 +193,7 @@ integer, parameter :: MAX_PARAM_LENGTH = 120
 contains
 
 !> Initialization and configures a regridding control structure based on customizable run-time parameters
-subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_mode, param_prefix, param_suffix)
+subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_mode, param_prefix, param_suffix,G)
   type(regridding_CS),        intent(inout) :: CS  !< Regridding control structure
   type(verticalGrid_type),    intent(in)    :: GV  !< Ocean vertical grid structure
   type(unit_scale_type),      intent(in)    :: US  !< A dimensional unit scaling type
@@ -197,12 +204,16 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
   character(len=*),           intent(in)    :: param_prefix !< String to prefix to parameter names.
                                                             !! If empty, causes main model parameters to be used.
   character(len=*),           intent(in)    :: param_suffix !< String to append to parameter names.
+  type(ocean_grid_type), intent(in), optional :: G
 
   ! Local variables
   integer :: ke ! Number of levels
+  integer :: ngrids ! Number of ALE coordinates used globally
+  integer :: ng, is, ie, js, je
   character(len=80)  :: string, string2, varName ! Temporary strings
+  character(len=8000)  :: string_long ! Temporary strings
   character(len=40)  :: coord_units, coord_res_param ! Temporary strings
-  character(len=MAX_PARAM_LENGTH) :: param_name
+  character(len=MAX_PARAM_LENGTH) :: param_name, param_name_2
   character(len=200) :: inputdir, fileName, longString
   character(len=320) :: message ! Temporary strings
   character(len=12) :: expected_units, alt_units ! Temporary strings
@@ -229,6 +240,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
   real, dimension(:), allocatable :: dz_max ! Thicknesses used to find maximum interface depths
                                             ! [H ~> m or kg m-2] or other units
   real, dimension(:), allocatable :: rho_target ! Target density used in HYBRID mode [kg m-3]
+  real, dimension(:,:), allocatable :: rho_target_2d ! Target density used in HYBRID mode [kg m-3]
   ! Thicknesses [m] that give level centers approximately corresponding to table 2 of WOA09
   ! These are approximate because the WOA09 depths are not smoothly spaced. Levels
   ! 1, 4, 5, 9, 12, 24, and 36 are 2.5, 2.5, 1.25 12.5, 37.5 and 62.5 m deeper than WOA09
@@ -361,6 +373,10 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
                  "               the filename and two variable names, separated\n"//&
                  "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
                  "               HYBRID:vgrid.nc,sigma2,dz",&
+                 " HYBRID_2D:string - read from a set of files.  Each string specifies\n"//&
+                 "               the filename and two variable names, separated\n"//&
+                 "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
+                 "               HYBRID_2D:ngrids:1,vgrid1.nc,sigma2,dz:2,vgrid2.nc,sigma2,dz:...",&
                  default=trim(string2))
   message = "The distribution of vertical resolution for the target\n"//&
             "grid used for Eulerian-like coordinates. For example,\n"//&
@@ -489,6 +505,50 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
       call log_param(param_file, mdl, "!TARGET_DENSITIES", rho_target, &
                'HYBRID target densities for interfaces', units=coordinateUnits(coord_mode))
     endif
+  elseif (index(trim(string),'HYBRID_2D:')==1) then
+    string2 = trim( extractWord(trim(string(11:)), 1))
+    read(string2,'(i4)') ngrids
+    CS%ng = ngrids
+    ke = GV%ke; allocate(CS%coordinateResolution_2d(ke,ngrids), source=1.e-30)
+    allocate(CS%target_density_2d(ke+1,ngrids))
+    allocate(CS%grid_mask(G%isc:G%iec,G%jsc:G%jec))
+    ! Loop through a list of parameter strings for each unique grid
+    do ng=1,ngrids
+      write(param_name_2,'(a,i4)') 'HYBRID_ALE_COORDINATE_CONFIG_',ng
+      call get_param(param_file, mdl, param_name_2, string2, &
+                 "Determines how to specify the coordinate "//&
+                 "resolution. Valid options are:\n"//&
+                 "string  -      read from a file. The string specifies\n"//&
+                 "               the filename and two variable names, separated\n"//&
+                 "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
+                 "               vgrid.nc,sigma2,dz",&
+                 default=trim(string2))
+      fileName = trim( extractWord(trim(string2(1:)), 1) )
+      if (fileName(1:1)/='.' .and. filename(1:1)/='/') fileName = trim(inputdir) // trim( fileName )
+      if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID_2D "// &
+        "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string2)//")")
+      varName = trim( extractWord(trim(string2(1:)), 2) )
+      if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID_2D "// &
+        "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string2)//")")
+      call MOM_read_data(trim(fileName), trim(varName), CS%target_density_2d(:,ng))
+      varName = trim( extractWord(trim(string2(1:)), 3) )
+      if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
+         call dz_function1( trim(string2((index(trim(string2),'FNC1:')+5):)), dz )
+      else ! Read dz from file
+         if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID "// &
+              "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string2)//")")
+         call MOM_read_data(trim(fileName), trim(varName), CS%coordinateResolution_2d(:,ng))
+      endif
+      if (main_parameters) then
+        call log_param(param_file, mdl, "!"//coord_res_param, dz, &
+                 trim(message), units=coordinateUnits(coord_mode))
+        call log_param(param_file, mdl, "!TARGET_DENSITIES", rho_target_2d(:,ng), &
+                 'HYBRID target densities for interfaces', units=coordinateUnits(coord_mode))
+      endif
+    enddo
+    CS%coordinateResolution_2d(:,:)=GV%m_to_H*CS%coordinateResolution_2d(:,:)
+    CS%target_density_2d(:,:)=US%kg_m3_to_R*CS%target_density_2d(:,:)
+    call MOM_read_data('INPUT/HYCOM1_mask_2d.nc','mask',CS%grid_mask,G%domain)
   elseif (index(trim(string),'WOA09INT')==1) then
     if (len_trim(string)==8) then ! string=='WOA09INT'
       tmpReal = 0. ; ke = 0 ; dz_extra = 0.
@@ -567,7 +627,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     ! This is a work around to apparently needed to work with the from_Z initialization...  ???
     if (coordinateMode(coord_mode) == REGRIDDING_ZSTAR .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYCOM1 .or. &
-        coordinateMode(coord_mode) == REGRIDDING_HYCOM_2D .or. &         
+        coordinateMode(coord_mode) == REGRIDDING_HYCOM1_2D .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYBGEN .or. &
         coordinateMode(coord_mode) == REGRIDDING_ADAPTIVE) then
       ! Adjust target grid to be consistent with maximum_depth
@@ -669,18 +729,13 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     call set_hycom_params(CS%hycom_CS, only_improves=tmpLogical)
   endif
 
-  if (main_parameters .and. coordinateMode(coord_mode) == REGRIDDING_HYCOM_2D) then
-    call get_param(param_file, mdl, "HYCOM_EQ_SCALE", tmpReal, &
-              "The meridional scale for transitioning hycom regridding parameters around the grid equator .", &
-              units="nondim",default=0.)
-    call set_hycom_lat_params(CS%hycom_lat_CS, eq_scale=tmpReal)
-    call get_param(param_file, mdl, "HYCOM_LAT_POWER", tmpReal, &
-         "The power of abs(y)/HYCOM_LAT_EQ_SCALE for the transition of regridding parameters "// &
-         "near the grid equator.",&
-          units="nondim",default=0.)
-    call set_hycom_lat_params(CS%hycom_lat_CS, lat_power=tmpReal)
+  if (main_parameters .and. coordinateMode(coord_mode) == REGRIDDING_HYCOM1_2D) then
+    call get_param(param_file, mdl, "HYCOM1_ONLY_IMPROVES", tmpLogical, &
+              "When regridding, an interface is only moved if this improves the fit to the target density.", &
+              default=.false.)
+    call set_hycom_2d_params(CS%hycom_2d_CS, only_improves=tmpLogical)
   endif
-  
+
   CS%use_hybgen_unmix = .false.
   if (coordinateMode(coord_mode) == REGRIDDING_HYBGEN) then
     call get_param(param_file, mdl, "USE_HYBGEN_UNMIX", CS%use_hybgen_unmix, &
@@ -847,7 +902,7 @@ subroutine end_regridding(CS)
   if (associated(CS%sigma_CS))  call end_coord_sigma(CS%sigma_CS)
   if (associated(CS%rho_CS))    call end_coord_rho(CS%rho_CS)
   if (associated(CS%hycom_CS))  call end_coord_hycom(CS%hycom_CS)
-  if (associated(CS%hycom_lat_CS))  call end_coord_hycom(CS%hycom_lat_CS)  
+  if (associated(CS%hycom_2d_CS))  call end_coord_hycom_2d(CS%hycom_2d_CS)
   if (associated(CS%adapt_CS))  call end_coord_adapt(CS%adapt_CS)
   if (associated(CS%hybgen_CS)) call end_hybgen_regrid(CS%hybgen_CS)
 
@@ -956,7 +1011,7 @@ subroutine regridding_main( remapCS, CS, G, GV, US, h, tv, h_new, dzInterface, &
     case ( REGRIDDING_HYCOM1 )
       call build_grid_HyCOM1( G, GV, G%US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, &
                               frac_shelf_h, zScale=Z_to_H )
-    case ( REGRIDDING_HYCOM_2D )
+    case ( REGRIDDING_HYCOM1_2D )
       call build_grid_HyCOM1_2D( G, GV, G%US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, &
                               frac_shelf_h, zScale=Z_to_H )
     case ( REGRIDDING_HYBGEN )
@@ -1008,7 +1063,7 @@ subroutine regridding_preadjust_reqs(CS, do_conv_adj, do_hybgen_unmix, hybgen_CS
   select case ( CS%regridding_scheme )
 
     case ( REGRIDDING_ZSTAR, REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_SIGMA, REGRIDDING_ARBITRARY, &
-           REGRIDDING_HYCOM1, REGRIDDING_HYCOM_2D, REGRIDDING_ADAPTIVE )
+           REGRIDDING_HYCOM1, REGRIDDING_HYCOM1_2D, REGRIDDING_ADAPTIVE )
       do_conv_adj = .false. ; do_hybgen_unmix = .false.
     case ( REGRIDDING_RHO )
       do_conv_adj = .true. ; do_hybgen_unmix = .false.
@@ -1745,7 +1800,7 @@ subroutine build_grid_HyCOM1( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface,
 
 end subroutine build_grid_HyCOM1
 
-!> Builds a simple HyCOM-like grid 
+!> Builds a simple HyCOM-like grid
 subroutine build_grid_HyCOM1_2d( G, GV, US, h, nom_depth_H, tv, h_new, dzInterface, remapCS, CS, frac_shelf_h, zScale )
   type(ocean_grid_type),                     intent(in)    :: G  !< Grid structure
   type(verticalGrid_type),                   intent(in)    :: GV !< Ocean vertical grid structure
@@ -1782,9 +1837,9 @@ subroutine build_grid_HyCOM1_2d( G, GV, US, h, nom_depth_H, tv, h_new, dzInterfa
   integer :: i, j, k, nki
 
   h_neglect = set_h_neglect(GV, CS%remap_answer_date, h_neglect_edge)
-  
-  if (.not.CS%target_density_set) call MOM_error(FATAL, "build_grid_HyCOM_lat : "//&
-        "Target densities must be set before build_grid_HyCOM_lat is called.")
+
+  if (.not.CS%target_density_set) call MOM_error(FATAL, "build_grid_HyCOM_2d : "//&
+        "Target densities must be set before build_grid_HyCOM_2d is called.")
 
   nki = min(GV%ke, CS%nk)
   ice_shelf = present(frac_shelf_h)
@@ -1813,7 +1868,7 @@ subroutine build_grid_HyCOM1_2d( G, GV, US, h, nom_depth_H, tv, h_new, dzInterfa
       enddo
 
 
-      call build_hycom_2d_column(CS%hycom_2d_CS, CS%hycom_2d_CS%rmask(i,j), remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
+      call build_hycom_2d_column(CS%hycom_2d_CS, CS%grid_mask(i,j), remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
            h(i,j,:), tv%T(i,j,:), tv%S(i,j,:), p_col, &
            z_col, z_col_new, zScale=zScale, &
            h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)
@@ -2106,7 +2161,7 @@ function uniformResolution(nk,coordMode,maxDepth,rhoLight,rhoHeavy)
   scheme = coordinateMode(coordMode)
   select case ( scheme )
 
-    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM_2D, REGRIDDING_HYBGEN, &
+    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM1_2D, REGRIDDING_HYBGEN, &
            REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_ADAPTIVE )
       uniformResolution(:) = maxDepth / real(nk)
 
@@ -2147,9 +2202,9 @@ subroutine initCoord(CS, GV, US, coord_mode, param_file)
   case (REGRIDDING_HYCOM1)
     call init_coord_hycom(CS%hycom_CS, CS%nk, CS%coordinateResolution, CS%target_density, &
          CS%interp_CS)
-  case (REGRIDDING_HYCOM_2D)
-    call init_coord_hycom_2D(CS%hycom_lat_CS, CS%nk, CS%coordinateResolution, CS%target_density, &
-                          CS%interp_CS)    
+  case (REGRIDDING_HYCOM1_2D)
+     call init_coord_hycom_2D(CS%hycom_2D_CS, CS%nk, CS%ng, CS%coordinateResolution_2d, &
+          CS%target_density_2d, CS%interp_CS)
   case (REGRIDDING_HYBGEN)
     call init_hybgen_regrid(CS%hybgen_CS, GV, US, param_file)
   case (REGRIDDING_ADAPTIVE)
@@ -2212,7 +2267,10 @@ subroutine set_target_densities( CS, rho_int )
     call MOM_error(FATAL, "set_target_densities inconsistent args!")
   endif
 
+
   CS%target_density(:) = rho_int(:)
+
+
   CS%target_density_set = .true.
 
 end subroutine set_target_densities
@@ -2229,6 +2287,7 @@ subroutine set_regrid_max_depths( CS, max_depths, units_to_H )
   integer :: K
 
   if (.not.allocated(CS%max_interface_depths)) allocate(CS%max_interface_depths(1:CS%nk+1))
+
 
   val_to_H = 1.0 ; if (present(units_to_H)) val_to_H = units_to_H
   if (max_depths(CS%nk+1) < max_depths(1)) val_to_H = -1.0*val_to_H
@@ -2248,12 +2307,11 @@ subroutine set_regrid_max_depths( CS, max_depths, units_to_H )
     CS%max_interface_depths(K) = val_to_H * max_depths(K)
   enddo
 
+
   ! set max depths for coordinate
   select case (CS%regridding_scheme)
   case (REGRIDDING_HYCOM1)
      call set_hycom_params(CS%hycom_CS, max_interface_depths=CS%max_interface_depths)
-  case (REGRIDDING_HYCOM_2D)
-    call set_hycom_2d_params(CS%hycom_2d_CS, max_interface_depths=CS%max_interface_depths)     
   end select
 end subroutine set_regrid_max_depths
 
@@ -2280,8 +2338,6 @@ subroutine set_regrid_max_thickness( CS, max_h, units_to_H )
   select case (CS%regridding_scheme)
   case (REGRIDDING_HYCOM1)
     call set_hycom_params(CS%hycom_CS, max_layer_thickness=CS%max_layer_thickness)
-  case (REGRIDDING_HYCOM_2D)
-    call set_hycom_2d_params(CS%hycom_2d_CS, max_layer_thickness=CS%max_layer_thickness)     
   end select
 end subroutine set_regrid_max_thickness
 
@@ -2440,7 +2496,7 @@ function getCoordinateUnits( CS )
   character(len=20)               :: getCoordinateUnits
 
   select case ( CS%regridding_scheme )
-    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM_2D, REGRIDDING_HYBGEN, &
+    case ( REGRIDDING_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM1_2D, REGRIDDING_HYBGEN, &
            REGRIDDING_ADAPTIVE )
       getCoordinateUnits = 'meter'
     case ( REGRIDDING_SIGMA_SHELF_ZSTAR )
@@ -2479,8 +2535,8 @@ function getCoordinateShortName( CS )
       getCoordinateShortName = 'coordinate'
     case ( REGRIDDING_HYCOM1 )
        getCoordinateShortName = 'z-rho'
-    case ( REGRIDDING_HYCOM_2D )
-      getCoordinateShortName = 'z-rho(lat)'       
+    case ( REGRIDDING_HYCOM1_2D )
+      getCoordinateShortName = 'z-rho(lat)'
     case ( REGRIDDING_HYBGEN )
       getCoordinateShortName = 'hybrid'
     case ( REGRIDDING_ADAPTIVE )
@@ -2573,9 +2629,9 @@ subroutine set_regrid_params( CS, boundary_extrapolation, min_thickness, old_gri
   case (REGRIDDING_HYCOM1)
     if (associated(CS%hycom_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
          call set_hycom_params(CS%hycom_CS, interp_CS=CS%interp_CS)
-  case (REGRIDDING_HYCOM_2D)
+  case (REGRIDDING_HYCOM1_2D)
     if (associated(CS%hycom_2d_CS) .and. (present(interp_scheme) .or. present(boundary_extrapolation))) &
-      call set_hycom_2d_params(CS%hycom_2d_CS, interp_CS=CS%interp_CS)    
+      call set_hycom_2d_params(CS%hycom_2d_CS, interp_CS=CS%interp_CS)
   case (REGRIDDING_HYBGEN)
     ! Do nothing for now.
   case (REGRIDDING_ADAPTIVE)
@@ -2635,7 +2691,7 @@ function getStaticThickness( CS, SSH, depth )
   real :: z, dz  ! Vertical positions and grid spacing [Z ~> m]
 
   select case ( CS%regridding_scheme )
-    case ( REGRIDDING_ZSTAR, REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM_2D, REGRIDDING_HYBGEN, &
+    case ( REGRIDDING_ZSTAR, REGRIDDING_SIGMA_SHELF_ZSTAR, REGRIDDING_HYCOM1, REGRIDDING_HYCOM1_2D, REGRIDDING_HYBGEN, &
            REGRIDDING_ADAPTIVE )
       if (depth>0.) then
         z = ssh
