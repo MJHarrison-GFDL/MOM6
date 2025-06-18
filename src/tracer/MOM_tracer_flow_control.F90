@@ -54,7 +54,10 @@ use MOM_CFC_cap, only : CFC_cap_column_physics, CFC_cap_set_forcing
 use MOM_CFC_cap, only : CFC_cap_stock, CFC_cap_end, CFC_cap_CS
 use oil_tracer, only : register_oil_tracer, initialize_oil_tracer
 use oil_tracer, only : oil_tracer_column_physics, oil_tracer_surface_state
-use oil_tracer, only : oil_stock, oil_tracer_end, oil_tracer_CS
+use river_tracer, only : river_stock, river_tracer_end, river_tracer_CS
+use river_tracer, only : register_river_tracer, initialize_river_tracer
+use river_tracer, only : river_tracer_column_physics
+use river_tracer, only : river_stock, river_tracer_end, river_tracer_CS
 use advection_test_tracer, only : register_advection_test_tracer, initialize_advection_test_tracer
 use advection_test_tracer, only : advection_test_tracer_column_physics, advection_test_tracer_surface_state
 use advection_test_tracer, only : advection_test_stock, advection_test_tracer_end, advection_test_tracer_CS
@@ -93,6 +96,7 @@ type, public :: tracer_flow_control_CS ; private
   logical :: use_MARBL_tracers = .false.           !< If true, use the MARBL tracer package
   logical :: use_regional_dyes = .false.           !< If true, use the regional dyes tracer package
   logical :: use_oil = .false.                     !< If true, use the oil tracer package
+  logical :: use_river = .false.                   !< If true, use the river tracer package  
   logical :: use_advection_test_tracer = .false.   !< If true, use the advection_test_tracer package
   logical :: use_OCMIP2_CFC = .false.              !< If true, use the OCMIP2_CFC tracer package
   logical :: use_CFC_cap = .false.                 !< If true, use the CFC_cap tracer package
@@ -111,6 +115,7 @@ type, public :: tracer_flow_control_CS ; private
   type(MARBL_tracers_CS), pointer :: MARBL_tracers_CSp => NULL()
   type(dye_tracer_CS), pointer :: dye_tracer_CSp => NULL()
   type(oil_tracer_CS), pointer :: oil_tracer_CSp => NULL()
+  type(river_tracer_CS), pointer :: river_tracer_CSp => NULL()  
   type(advection_test_tracer_CS), pointer :: advection_test_tracer_CSp => NULL()
   type(OCMIP2_CFC_CS), pointer :: OCMIP2_CFC_CSp => NULL()
   type(CFC_cap_CS),    pointer :: CFC_cap_CSp => NULL()
@@ -210,6 +215,9 @@ subroutine call_tracer_register(G, GV, US, param_file, CS, tr_Reg, restart_CS)
   call get_param(param_file, mdl, "USE_OIL_TRACER", CS%use_oil, &
                  "If true, use the oil_tracer tracer package.", &
                  default=.false.)
+  call get_param(param_file, mdl, "USE_RIVER_TRACER", CS%use_river, &
+                 "If true, use the oil_tracer tracer package.", &
+                 default=.false.)
   call get_param(param_file, mdl, "USE_ADVECTION_TEST_TRACER", CS%use_advection_test_tracer, &
                  "If true, use the advection_test_tracer tracer package.", &
                  default=.false.)
@@ -262,6 +270,9 @@ subroutine call_tracer_register(G, GV, US, param_file, CS, tr_Reg, restart_CS)
                         tr_Reg, restart_CS)
   if (CS%use_oil) CS%use_oil = &
     register_oil_tracer(G%HI, GV, US, param_file,  CS%oil_tracer_CSp, &
+                        tr_Reg, restart_CS)
+  if (CS%use_river) CS%use_river = &
+    register_river_tracer(G%HI, GV, US, param_file,  CS%river_tracer_CSp, &
                         tr_Reg, restart_CS)
   if (CS%use_advection_test_tracer) CS%use_advection_test_tracer = &
     register_advection_test_tracer(G, GV, param_file, CS%advection_test_tracer_CSp, &
@@ -348,6 +359,8 @@ subroutine tracer_flow_control_init(restart, day, G, GV, US, h, param_file, diag
     call initialize_dye_tracer(restart, day, G, GV, h, diag, OBC, CS%dye_tracer_CSp, sponge_CSp, tv)
   if (CS%use_oil) &
     call initialize_oil_tracer(restart, day, G, GV, US, h, diag, OBC, CS%oil_tracer_CSp, sponge_CSp)
+  if (CS%use_river) &
+    call initialize_river_tracer(restart, G, GV, US, h, diag, OBC, CS%river_tracer_CSp, sponge_CSp)
   if (CS%use_advection_test_tracer) &
     call initialize_advection_test_tracer(restart, day, G, GV, h, diag, OBC, CS%advection_test_tracer_CSp, &
                                 sponge_CSp)
@@ -544,6 +557,11 @@ subroutine call_tracer_column_fns(h_old, h_new, ea, eb, fluxes, mld, dt, G, GV, 
                                      G, GV, US, CS%oil_tracer_CSp, tv, &
                                      evap_CFL_limit=evap_CFL_limit, &
                                      minimum_forcing_depth=minimum_forcing_depth)
+    if (CS%use_river) &
+      call river_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, &
+                                     G, GV, US, CS%river_tracer_CSp, tv, &
+                                     evap_CFL_limit=evap_CFL_limit, &
+                                     minimum_forcing_depth=minimum_forcing_depth)
 
     if (CS%use_advection_test_tracer) &
       call advection_test_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, &
@@ -628,6 +646,9 @@ subroutine call_tracer_column_fns(h_old, h_new, ea, eb, fluxes, mld, dt, G, GV, 
     if (CS%use_oil) &
       call oil_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, &
                                      G, GV, US, CS%oil_tracer_CSp, tv)
+    if (CS%use_river) &
+      call river_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, &
+                                     G, GV, US, CS%river_tracer_CSp, tv)
     if (CS%use_advection_test_tracer) &
       call advection_test_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, &
                                       G, GV, US, CS%advection_test_tracer_CSp)
@@ -757,6 +778,11 @@ subroutine call_tracer_stocks(h, stock_values, G, GV, US, CS, stock_names, stock
   if (CS%use_oil) then
     ns = oil_stock(h, values_EFP, G, GV, CS%oil_tracer_CSp, names, units, stock_index)
     call store_stocks("oil_tracer", ns, names, units, values_EFP, index, stock_val_EFP, &
+                      set_pkg_name, max_ns, ns_tot, stock_names, stock_units)
+  endif
+  if (CS%use_river) then
+    ns = river_stock(h, values_EFP, G, GV, CS%river_tracer_CSp, names, units, stock_index)
+    call store_stocks("river_tracer", ns, names, units, values_EFP, index, stock_val_EFP, &
                       set_pkg_name, max_ns, ns_tot, stock_names, stock_units)
   endif
   if (CS%use_OCMIP2_CFC) then
@@ -931,6 +957,7 @@ subroutine tracer_flow_control_end(CS)
   if (CS%use_MARBL_tracers) call MARBL_tracers_end(CS%MARBL_tracers_CSp)
   if (CS%use_regional_dyes) call regional_dyes_end(CS%dye_tracer_CSp)
   if (CS%use_oil) call oil_tracer_end(CS%oil_tracer_CSp)
+  if (CS%use_river) call river_tracer_end(CS%river_tracer_CSp)  
   if (CS%use_advection_test_tracer) call advection_test_tracer_end(CS%advection_test_tracer_CSp)
   if (CS%use_OCMIP2_CFC) call OCMIP2_CFC_end(CS%OCMIP2_CFC_CSp)
   if (CS%use_CFC_cap) call CFC_cap_end(CS%CFC_cap_CSp)
