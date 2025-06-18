@@ -29,7 +29,7 @@ implicit none ; private
 #include <MOM_memory.h>
 
 public register_river_tracer, initialize_river_tracer
-public river_tracer_column_physics, river_tracer_surface_state
+public river_tracer_column_physics
 public river_stock, river_tracer_end
 
 type :: stringType
@@ -54,15 +54,15 @@ type, public :: river_tracer_CS ; private
   type(diag_ctrl), pointer :: diag => NULL() !< A structure that is used to
                                    !! regulate the timing of diagnostic output.
   type(MOM_restart_CS), pointer :: restart_CSp => NULL() !< A pointer to the restart control structure
-  type(stringType), allocatable, dimension(:) :: map_file !< The filename of the river map
-  type(stringType), allocatable, dimension(:) :: names !< A list of river names
+  character(len=128) :: map_file !< The filename of the river map
+  character(len=32), allocatable, dimension(:) :: names !< A list of river names
 end type river_tracer_CS
 
 contains
 
 !> Register river tracer fields and subroutines to be used with MOM.
-function register_river_tracer(HI, GV, US, param_file, CS, tr_Reg, restart_CS)
-  type(hor_index_type),       intent(in) :: HI   !< A horizontal index type structure
+function register_river_tracer(G, GV, US, param_file, CS, tr_Reg, restart_CS)
+  type(ocean_grid_type),       intent(in) :: G   !< A horizontal index type structure
   type(verticalGrid_type),    intent(in) :: GV   !< The ocean's vertical grid structure
   type(unit_scale_type),      intent(in) :: US   !< A dimensional unit scaling type
   type(param_file_type),      intent(in) :: param_file !< A structure to parse for run-time parameters
@@ -80,9 +80,10 @@ function register_river_tracer(HI, GV, US, param_file, CS, tr_Reg, restart_CS)
   real, pointer :: tr_ptr(:,:,:) => NULL() ! The river tracer concentration [kg m-3]
   logical :: register_river_tracer
   integer :: isd, ied, jsd, jed, nz, m
+  character(len=64) :: filename, inputdir, flux_units
+  real, allocatable, dimension(:,:) :: rmask ! A temporary array for storing the river mask
 
-  
-  isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed ; nz = GV%ke
+  isd = G%HI%isd ; ied = G%HI%ied ; jsd = G%HI%jsd ; jed = G%HI%jed ; nz = GV%ke
 
   if (associated(CS)) then
     call MOM_error(FATAL, "register_river_tracer called with an "// &
@@ -98,14 +99,18 @@ function register_river_tracer(HI, GV, US, param_file, CS, tr_Reg, restart_CS)
   if (CS%num_rivers > 0) then
     allocate( CS%names(CS%num_rivers))
     allocate( CS%tr_desc(CS%num_rivers))
-    allocate(CS%mask2d%mask(isd:ied,jsd:jed,source=0.0))
+    allocate(CS%mask2d%mask(isd:ied,jsd:jed))
+    allocate(rmask(isd:ied,jsd:jed))
+    CS%mask2d%mask=0.0
     call get_param(param_file,mdl, "RIVER_MAP_FILENAME", CS%map_file,fail_if_missing=.true.)
     call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
     filename=trim(slasher(inputdir))//trim(CS%map_file)
-    call MOM_read_data(filename,'river_tracer_map', CS%mask2d%mask)
-    call get_param(param_file,mdl, "RIVER_NAMES", CS%names,fail_if_missing=.true.)    
+    call MOM_read_data(filename,'river_tracer_map', rmask, G%Domain)
+    CS%mask2d%mask(:,:)=anint(rmask)
+    deallocate(rmask)
+    call get_param(param_file,mdl, "RIVER_NAMES", CS%names,fail_if_missing=.true.)
     do m=1, CS%num_rivers
-      CS%tr_desc(m) = var_desc(trim(CS%names(k)), "kg m-3", trim(CS%names(k))//" River Tracer", caller=mdl)      
+      CS%tr_desc(m) = var_desc(trim(CS%names(m)), "kg m-3", trim(CS%names(m))//" River Tracer", caller=mdl)
     enddo
   else
      return
@@ -121,7 +126,7 @@ function register_river_tracer(HI, GV, US, param_file, CS, tr_Reg, restart_CS)
     tr_ptr => CS%tr(:,:,:,m)
     call query_vardesc(CS%tr_desc(m), name=CS%names(m), caller="register_river_tracer")
     ! Register the tracer for horizontal advection, diffusion, and restarts.
-    call register_tracer(tr_ptr, tr_Reg, param_file, HI, GV, tr_desc=CS%tr_desc(m), &
+    call register_tracer(tr_ptr, tr_Reg, param_file, G%HI, GV, tr_desc=CS%tr_desc(m), &
                          registry_diags=.true., flux_units=flux_units, restart_CS=restart_CS, &
                          mandatory=.not.CS%river_may_reinit)
   enddo
@@ -133,12 +138,13 @@ function register_river_tracer(HI, GV, US, param_file, CS, tr_Reg, restart_CS)
 end function register_river_tracer
 
 !> Initialize the river tracers and set up tracer output
-subroutine initialize_river_tracer(restart, G, GV, h, diag, OBC, CS, &
+subroutine initialize_river_tracer(restart, G, GV, US, h, diag, OBC, CS, &
                                   sponge_CSp)
   logical,                            intent(in) :: restart !< .true. if the fields have already
                                                          !! been read from a restart file.
   type(ocean_grid_type),              intent(in) :: G    !< The ocean's grid structure
   type(verticalGrid_type),            intent(in) :: GV   !< The ocean's vertical grid structure
+  type(unit_scale_type),              intent(in) :: US   !< The dimensional unit scaling type
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                                       intent(in) :: h    !< Layer thicknesses [H ~> m or kg m-2]
   type(diag_ctrl),            target, intent(in) :: diag !< A structure that is used to regulate
@@ -151,7 +157,7 @@ subroutine initialize_river_tracer(restart, G, GV, h, diag, OBC, CS, &
   type(sponge_CS),                    pointer    :: sponge_CSp !< Pointer to the control structure for the sponges.
 
   ! Local variables
-  character(len=16) :: name     
+  character(len=16) :: name
   logical :: OK
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz, m
   integer :: IsdB, IedB, JsdB, JedB
@@ -169,7 +175,7 @@ subroutine initialize_river_tracer(restart, G, GV, h, diag, OBC, CS, &
     if ((.not.restart) .or. (CS%river_may_reinit .and. .not. &
         query_initialized(CS%tr(:,:,:,m), name, CS%restart_CSp))) then
        CS%tr(:,:,:,m)=0.0
-       call set_initialized(CS%tr(:,:,:,m), name, CS%restart_CSp)       
+       call set_initialized(CS%tr(:,:,:,m), name, CS%restart_CSp)
     endif
   enddo
 
@@ -245,7 +251,7 @@ subroutine river_tracer_column_physics(h_old, h_new, ea, eb, fluxes, dt, G, GV, 
     do j=js,je ; do i=is,ie
        CS%tr(i,j,1,m) = CS%tr(i,j,1,m)+(fluxes%lrunoff(i,j)+fluxes%frunoff(i,j))*dt/ &
                          (vol_scale * (h_new(i,j,1)+GV%H_subroundoff) * G%areaT(i,j) )
-    enddo ; enddo 
+    enddo ; enddo
   enddo
 
 
@@ -286,7 +292,7 @@ function river_stock(h, stocks, G, GV, CS, names, units, stock_index)
     units(m) = trim(units(m))//" kg"
     stocks(m) = global_mass_int_EFP(h, G, GV, CS%tr(:,:,:,m), on_PE_only=.true.)
   enddo
-  river_stock = CS%ntr
+  river_stock = CS%num_rivers
 
 end function river_stock
 
