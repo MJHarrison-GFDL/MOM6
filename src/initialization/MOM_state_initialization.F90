@@ -483,7 +483,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   if (depress_sfc) then
     call depress_surface(h, G, GV, US, PF, tv, just_read=just_read)
   elseif (trim_ic_for_p_surf) then
-    call trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read=just_read)
+    call trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read=just_read, mass_shelf=mass_shelf)
   elseif (new_sim .and. use_ice_shelf .and. present(mass_shelf)) then
     call calc_sfc_displacement(PF, G, GV, US, mass_shelf, tv, h)
   endif
@@ -1239,7 +1239,7 @@ end subroutine depress_surface
 
 !> Adjust the layer thicknesses by cutting away the top of each model column at the depth
 !! where the hydrostatic pressure matches an imposed surface pressure read from file.
-subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
+subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read, mass_shelf)
   type(param_file_type),   intent(in)    :: PF !< Parameter file structure
   type(ocean_grid_type),   intent(in)    :: G  !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV !< Vertical grid structure
@@ -1250,6 +1250,9 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
                            intent(inout) :: h  !< Layer thickness [H ~> m or kg m-2]
   logical,                 intent(in)    :: just_read !< If true, this call will only read
                                                       !! parameters without changing h.
+  real, dimension(SZI_(G),SZJ_(G)), optional, &
+                           intent(in)    :: mass_shelf  !< shelf mass [R Z ~> kg m-2]
+
   ! Local variables
   character(len=200) :: mdl = "trim_for_ice"
   real, dimension(SZI_(G),SZJ_(G)) :: p_surf ! Imposed pressure on ocean at surface [R L2 T-2 ~> Pa]
@@ -1269,22 +1272,27 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
                                   ! forms of the same remapping expressions.
   logical :: use_remapping ! If true, remap the initial conditions.
   logical :: use_frac_dp_bugfix   ! If true, use bugfix. Otherwise, pressure input to EOS is negative.
+  logical :: read_shelf_mass=.true.
   type(remapping_CS), pointer :: remap_CS => NULL()
 
-  call get_param(PF, mdl, "SURFACE_PRESSURE_FILE", p_surf_file, &
+  if (PRESENT(mass_shelf)) read_shelf_mass=.false.
+
+  if (read_shelf_mass) then
+    call get_param(PF, mdl, "SURFACE_PRESSURE_FILE", p_surf_file, &
                  "The initial condition file for the surface pressure exerted by ice.", &
                  fail_if_missing=.not.just_read, do_not_log=just_read)
-  call get_param(PF, mdl, "SURFACE_PRESSURE_VAR", p_surf_var, &
+    call get_param(PF, mdl, "SURFACE_PRESSURE_VAR", p_surf_var, &
                  "The initial condition variable for the surface pressure exerted by ice.", &
                  default="", do_not_log=just_read)
-  call get_param(PF, mdl, "INPUTDIR", inputdir, default=".", do_not_log=.true.)
-  filename = trim(slasher(inputdir))//trim(p_surf_file)
-  if (.not.just_read) call log_param(PF,  mdl, "!INPUTDIR/SURFACE_HEIGHT_IC_FILE", filename)
+    call get_param(PF, mdl, "INPUTDIR", inputdir, default=".", do_not_log=.true.)
+    filename = trim(slasher(inputdir))//trim(p_surf_file)
+    if (.not.just_read) call log_param(PF,  mdl, "!INPUTDIR/SURFACE_HEIGHT_IC_FILE", filename)
 
-  call get_param(PF, mdl, "SURFACE_PRESSURE_SCALE", scale_factor, &
+    call get_param(PF, mdl, "SURFACE_PRESSURE_SCALE", scale_factor, &
                  "A scaling factor to convert SURFACE_PRESSURE_VAR from "//&
                  "file SURFACE_PRESSURE_FILE into a surface pressure.", &
                  units="file dependent", default=1., do_not_log=just_read)
+  endif
   call get_param(PF, mdl, "MIN_THICKNESS", min_thickness, 'Minimum layer thickness', &
                  units='m', default=1.e-3, scale=GV%m_to_H, do_not_log=just_read)
   call get_param(PF, mdl, "TRIM_IC_Z_TOLERANCE", z_tolerance, &
@@ -1316,8 +1324,12 @@ subroutine trim_for_ice(PF, G, GV, US, ALE_CSp, tv, h, just_read)
 
   if (just_read) return ! All run-time parameters have been read, so return.
 
-  call MOM_read_data(filename, p_surf_var, p_surf, G%Domain, &
+  if (read_shelf_mass) then
+    call MOM_read_data(filename, p_surf_var, p_surf, G%Domain, &
                      scale=scale_factor*US%Pa_to_RL2_T2)
+  else
+     p_surf=mass_shelf ! mass shelf should already be unit scaled
+  endif
 
   if (use_remapping) then
     allocate(remap_CS)
