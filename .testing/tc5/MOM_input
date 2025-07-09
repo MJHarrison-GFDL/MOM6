@@ -10,7 +10,7 @@
 ! === module MOM_domains ===
 REENTRANT_X = False             !   [Boolean] default = True
                                 ! If true, the domain is zonally reentrant.
-NIGLOBAL = 80                   !
+NIGLOBAL = 20                   !
                                 ! The total number of thickness grid points in the x-direction in the physical
                                 ! domain. With STATIC_MEMORY_ this is set in MOM_memory.h at compile time.
 NJGLOBAL = 10                   !
@@ -79,7 +79,7 @@ LENLAT = 10.0                   !   [k]
 WESTLON = 320.0                 !   [k] default = 0.0
                                 ! The western longitude of the domain or the equivalent starting value for the
                                 ! x-axis.
-LENLON = 80.0                    !   [k]
+LENLON = 20.0                    !   [k]
                                 ! The longitudinal or x-direction length of the domain.
 TOPO_CONFIG = "ISOMIP"          !
                                 ! This specifies how bathymetry is specified:
