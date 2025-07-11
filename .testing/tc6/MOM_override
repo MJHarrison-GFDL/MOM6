@@ -1,0 +1,14 @@
+! Blank file in which we can put "overrides" for parameters
+!#override NIPROC = 1                     !
+                                ! The number of processors in the x-direction. With STATIC_MEMORY_ this is set
+                                ! in MOM_memory.h at compile time.
+!#override NJPROC = 1                      !
+                                ! The number of processors in the y-direction. With STATIC_MEMORY_ this is set
+                                ! in MOM_memory.h at compile time.
+!#override LAYOUT = 1, 1                  !
+
+!#override ROTATE_INDEX = False
+!#override INDEX_TURNS = 3
+
+#override DAYMAX = 2.0
+!#override DEBUG = True
