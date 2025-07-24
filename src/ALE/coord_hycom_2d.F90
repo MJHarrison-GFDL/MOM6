@@ -186,15 +186,17 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
 
   ! Interpolates for the target interface position with the rho_col profile
   ! Based on global density profile, interpolate to generate a new grid
-  k=anint(rmask)
+  k=floor(rmask)
+  wt2=rmask-k;wt1=(1-wt2)
   call build_and_interpolate_grid(CS%interp_CS, rho_col, nz, h(:), z_col, &
        CS%target_density(:,k), CS%nk, h1_col_new, z1_col_new, h_neglect, h_neglect_edge)
+  ! Can eliminate extra call here if the mask is close to a whole number
   k=min(k+1,CS%ng)
   call build_and_interpolate_grid(CS%interp_CS, rho_col, nz, h(:), z_col, &
        CS%target_density(:,k), CS%nk, h2_col_new, z2_col_new, h_neglect, h_neglect_edge)
-  wt1=k-rmask
-  h_col_new(:)=wt1*h1_col_new(:)+(1-wt1)*h2_col_new(:)
-  z_col_new(:)=wt1*z1_col_new(:)+(1-wt1)*z2_col_new(:)
+
+  h_col_new(:)=wt1*h1_col_new(:)+wt2*h2_col_new(:)
+  z_col_new(:)=wt1*z1_col_new(:)+wt2*z2_col_new(:)
 
   if (CS%only_improves .and. nz == CS%nk) then
     ! Only move an interface if it improves the density fit
@@ -281,8 +283,8 @@ subroutine build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, nz, dep
                              degree, h_neglect, h_neglect_edge)
 
   R(1) = rho_col(1)
-  g1=anint(rmask);g2=min(g1+1,CS%ng)
-  wt1=g1-rmask;wt2=(1.-wt1)
+  g1=floor(rmask);g2=min(g1+1,CS%ng)
+  wt2=rmask-g1;wt1=(1-wt2)
   RiAnom(1) = ppoly_E(1,1) - (wt1*CS%target_density(1,g1)+wt2*CS%target_density(1,g2))
   do k= 2,nz
     R(k) = rho_col(k)

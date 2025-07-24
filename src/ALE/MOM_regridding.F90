@@ -10,12 +10,13 @@ use MOM_io,            only : vardesc, var_desc, SINGLE_FILE
 use MOM_io,            only : MOM_netCDF_file, MOM_field
 use MOM_io,            only : create_MOM_file, MOM_write_field
 use MOM_io,            only : verify_variable_units, slasher
+use MOM_domains,              only : pass_var
 use MOM_unit_scaling,  only : unit_scale_type
 use MOM_variables,     only : ocean_grid_type, thermo_var_ptrs
 use MOM_verticalGrid,  only : verticalGrid_type
 use MOM_EOS,           only : EOS_type, calculate_density
 use MOM_string_functions, only : uppercase, extractWord, extract_integer, extract_real
-
+use MOM_debugging, only : hchksum
 use MOM_remapping, only : remapping_CS
 use regrid_consts, only : state_dependent, coordinateUnits
 use regrid_consts, only : coordinateMode, DEFAULT_COORDINATE_MODE
@@ -73,6 +74,7 @@ type, public :: regridding_CS ; private
 
   !> A flag to indicate that the target_density arrays has been filled with data.
   logical :: target_density_set = .false.
+  logical :: target_density_2d_set = .false.
 
   !> This array is set by function set_regrid_max_depths()
   !! It specifies the maximum depth that every interface is allowed to take [H ~> m or kg m-2].
@@ -209,7 +211,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
   ! Local variables
   integer :: ke ! Number of levels
   integer :: ngrids ! Number of ALE coordinates used globally
-  integer :: ng, is, ie, js, je
+  integer :: ng, is, ie, js, je, i, j
   character(len=80)  :: string, string2, varName ! Temporary strings
   character(len=8000)  :: string_long ! Temporary strings
   character(len=40)  :: coord_units, coord_res_param ! Temporary strings
@@ -372,11 +374,8 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
                  " HYBRID:string - read from a file. The string specifies\n"//&
                  "               the filename and two variable names, separated\n"//&
                  "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
-                 "               HYBRID:vgrid.nc,sigma2,dz",&
-                 " HYBRID_2D:string - read from a set of files.  Each string specifies\n"//&
-                 "               the filename and two variable names, separated\n"//&
-                 "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
-                 "               HYBRID_2D:ngrids:1,vgrid1.nc,sigma2,dz:2,vgrid2.nc,sigma2,dz:...",&
+                 "               HYBRID:vgrid.nc,sigma2,dz\n"//&
+                 " HYBRID_2D:N - Use N regional configurations.",&
                  default=trim(string2))
   message = "The distribution of vertical resolution for the target\n"//&
             "grid used for Eulerian-like coordinates. For example,\n"//&
@@ -510,11 +509,12 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     read(string2,'(i4)') ngrids
     CS%ng = ngrids
     ke = GV%ke; allocate(CS%coordinateResolution_2d(ke,ngrids), source=1.e-30)
+    allocate(dz(ke))
     allocate(CS%target_density_2d(ke+1,ngrids))
-    allocate(CS%grid_mask(G%isc:G%iec,G%jsc:G%jec))
+    allocate(CS%grid_mask(G%isd:G%ied,G%jsd:G%jed))
     ! Loop through a list of parameter strings for each unique grid
     do ng=1,ngrids
-      write(param_name_2,'(a,i4)') 'HYBRID_ALE_COORDINATE_CONFIG_',ng
+      write(param_name_2,'(a,i4.4)') 'HYBRID_ALE_COORDINATE_CONFIG_',ng
       call get_param(param_file, mdl, param_name_2, string2, &
                  "Determines how to specify the coordinate "//&
                  "resolution. Valid options are:\n"//&
@@ -523,15 +523,15 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
                  "               by a comma or space, for sigma-2 and dz. e.g.\n"//&
                  "               vgrid.nc,sigma2,dz",&
                  default=trim(string2))
-      fileName = trim( extractWord(trim(string2(1:)), 1) )
+      fileName = trim( extractWord(trim(string2(11:)), 1) )
       if (fileName(1:1)/='.' .and. filename(1:1)/='/') fileName = trim(inputdir) // trim( fileName )
       if (.not. file_exists(fileName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID_2D "// &
         "Specified file not found: Looking for '"//trim(fileName)//"' ("//trim(string2)//")")
-      varName = trim( extractWord(trim(string2(1:)), 2) )
+      varName = trim( extractWord(trim(string2(11:)), 2) )
       if (.not. field_exists(fileName,varName)) call MOM_error(FATAL,trim(mdl)//", initialize_regridding: HYBRID_2D "// &
         "Specified field not found: Looking for '"//trim(varName)//"' ("//trim(string2)//")")
       call MOM_read_data(trim(fileName), trim(varName), CS%target_density_2d(:,ng))
-      varName = trim( extractWord(trim(string2(1:)), 3) )
+      varName = trim( extractWord(trim(string2(11:)), 3) )
       if (varName(1:5) == 'FNC1:') then ! Use FNC1 to calculate dz
          call dz_function1( trim(string2((index(trim(string2),'FNC1:')+5):)), dz )
       else ! Read dz from file
@@ -546,9 +546,15 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
                  'HYBRID target densities for interfaces', units=coordinateUnits(coord_mode))
       endif
     enddo
+    CS%target_density_2d_set = .true.
     CS%coordinateResolution_2d(:,:)=GV%m_to_H*CS%coordinateResolution_2d(:,:)
     CS%target_density_2d(:,:)=US%kg_m3_to_R*CS%target_density_2d(:,:)
     call MOM_read_data('INPUT/HYCOM1_mask_2d.nc','mask',CS%grid_mask,G%domain)
+    ! Use arbitrary settings over dry cells
+    do j=G%jsc,G%jec ; do i=G%isc,G%iec
+      if (CS%grid_mask(i,j)==0.) CS%grid_mask(i,j)=1.
+    enddo; enddo
+    call pass_var(CS%grid_mask, G%Domain,halo=1)
   elseif (index(trim(string),'WOA09INT')==1) then
     if (len_trim(string)==8) then ! string=='WOA09INT'
       tmpReal = 0. ; ke = 0 ; dz_extra = 0.
@@ -627,7 +633,6 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     ! This is a work around to apparently needed to work with the from_Z initialization...  ???
     if (coordinateMode(coord_mode) == REGRIDDING_ZSTAR .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYCOM1 .or. &
-        coordinateMode(coord_mode) == REGRIDDING_HYCOM1_2D .or. &
         coordinateMode(coord_mode) == REGRIDDING_HYBGEN .or. &
         coordinateMode(coord_mode) == REGRIDDING_ADAPTIVE) then
       ! Adjust target grid to be consistent with maximum_depth
@@ -1594,6 +1599,7 @@ subroutine build_rho_grid( G, GV, US, h, nom_depth_H, tv, dzInterface, remapCS, 
   nz = GV%ke
   ice_shelf = present(frac_shelf_h)
 
+
   if (.not.CS%target_density_set) call MOM_error(FATAL, "build_rho_grid: "//&
         "Target densities must be set before build_rho_grid is called.")
 
@@ -1838,11 +1844,12 @@ subroutine build_grid_HyCOM1_2d( G, GV, US, h, nom_depth_H, tv, h_new, dzInterfa
 
   h_neglect = set_h_neglect(GV, CS%remap_answer_date, h_neglect_edge)
 
-  if (.not.CS%target_density_set) call MOM_error(FATAL, "build_grid_HyCOM_2d : "//&
+  if (.not.CS%target_density_2d_set) call MOM_error(FATAL, "build_grid_HyCOM_2d : "//&
         "Target densities must be set before build_grid_HyCOM_2d is called.")
 
   nki = min(GV%ke, CS%nk)
   ice_shelf = present(frac_shelf_h)
+
 
   ! Build grid based on target interface densities
   do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
