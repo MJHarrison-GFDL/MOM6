@@ -50,7 +50,7 @@ implicit none ; private
 type, public :: regridding_CS ; private
    !< A gridded array of identifiers
    !! used to apply different grid parameters to each grid cell (HYCOM1-only)
-   real, dimension(:,:), allocatable :: grid_mask
+   real, dimension(:,:,:), allocatable :: grid_mask
    integer :: ng
 
   !> This array is set by function setCoordinateResolution()
@@ -234,6 +234,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
   real :: adaptZoom  ! The thickness of the near-surface zooming region with the adaptive coordinate [H ~> m or kg m-2]
   real :: adaptDrho0 ! Reference density difference for stratification-dependent diffusion. [R ~> kg m-3]
   integer :: k, nzf(4)
+  real :: ksum ! sum of weights [nondim]
   real, dimension(:), allocatable :: dz     ! Resolution (thickness) in units of coordinate, which may be [m]
                                             ! or [Z ~> m] or [H ~> m or kg m-2] or [R ~> kg m-3] or other units.
   real, dimension(:), allocatable :: h_max  ! Maximum layer thicknesses [H ~> m or kg m-2]
@@ -511,7 +512,7 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     ke = GV%ke; allocate(CS%coordinateResolution_2d(ke,ngrids), source=1.e-30)
     allocate(dz(ke))
     allocate(CS%target_density_2d(ke+1,ngrids))
-    allocate(CS%grid_mask(G%isd:G%ied,G%jsd:G%jed))
+    allocate(CS%grid_mask(CS%ng,G%isd:G%ied,G%jsd:G%jed))
     ! Loop through a list of parameter strings for each unique grid
     do ng=1,ngrids
       write(param_name_2,'(a,i4.4)') 'HYBRID_ALE_COORDINATE_CONFIG_',ng
@@ -549,10 +550,18 @@ subroutine initialize_regridding(CS, GV, US, max_depth, param_file, mdl, coord_m
     CS%target_density_2d_set = .true.
     CS%coordinateResolution_2d(:,:)=GV%m_to_H*CS%coordinateResolution_2d(:,:)
     CS%target_density_2d(:,:)=US%kg_m3_to_R*CS%target_density_2d(:,:)
-    call MOM_read_data('INPUT/HYCOM1_mask_2d.nc','mask',CS%grid_mask,G%domain)
+    call MOM_read_data('INPUT/HYCOM1_mask_2d.nc','weight',CS%grid_mask,G%domain)
     ! Use arbitrary settings over dry cells
     do j=G%jsc,G%jec ; do i=G%isc,G%iec
-      if (CS%grid_mask(i,j)==0.) CS%grid_mask(i,j)=1.
+      ksum=sum(CS%grid_mask(:,i,j))
+      if (ksum>0) then
+        do k=1,CS%ng
+          CS%grid_mask(k,i,j)=CS%grid_mask(k,i,j)/ksum
+        enddo
+      else
+        CS%grid_mask(:,i,j)=0.0
+        CS%grid_mask(1,i,j)=1.0
+      endif
     enddo; enddo
     call pass_var(CS%grid_mask, G%Domain,halo=1)
   elseif (index(trim(string),'WOA09INT')==1) then
@@ -1875,7 +1884,7 @@ subroutine build_grid_HyCOM1_2d( G, GV, US, h, nom_depth_H, tv, h_new, dzInterfa
       enddo
 
 
-      call build_hycom_2d_column(CS%hycom_2d_CS, CS%grid_mask(i,j), remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
+      call build_hycom_2d_column(CS%hycom_2d_CS, CS%grid_mask(:,i,j), remapCS, tv%eqn_of_state, GV%ke, nominalDepth, &
            h(i,j,:), tv%T(i,j,:), tv%S(i,j,:), p_col, &
            z_col, z_col_new, zScale=zScale, &
            h_neglect=h_neglect, h_neglect_edge=h_neglect_edge)

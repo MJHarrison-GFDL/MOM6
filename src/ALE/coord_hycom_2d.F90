@@ -122,7 +122,7 @@ end subroutine set_hycom_2d_params
 subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h, T, S, p_col, &
                                z_col, z_col_new, zScale, h_neglect, h_neglect_edge)
   type(hycom_2d_CS),        intent(in)    :: CS    !< Coordinate control structure
-  real,                  intent(in)    :: rmask  !< region mask
+  real, dimension(CS%ng),   intent(in)    :: rmask  !< region mask
   type(remapping_CS),    intent(in)    :: remapCS !< Remapping parameters and options
   type(EOS_type),        intent(in)    :: eqn_of_state !< Equation of state structure
   integer,               intent(in)    :: nz    !< Number of levels
@@ -146,9 +146,7 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   real, dimension(nz)      :: rho_col   ! Layer densities in a column [R ~> kg m-3]
   real, dimension(CS%nk)   :: h_col_new ! New layer thicknesses [H ~> m or kg m-2]
   real, dimension(CS%nk)   :: h1_col_new ! New layer thicknesses [H ~> m or kg m-2]
-  real, dimension(CS%nk)   :: h2_col_new ! New layer thicknesses [H ~> m or kg m-2]
   real, dimension(CS%nk+1)   :: z1_col_new ! New layer interfacel positions relative to the surface [H ~> m or kg m-2]
-  real, dimension(CS%nk+1)   :: z2_col_new ! New layer interface positions relative to the surface  [H ~> m or kg m-2]
   real, dimension(CS%nk)   :: r_col_new ! New layer densities [R ~> kg m-3]
   real, dimension(CS%nk)   :: T_col_new ! New layer temperatures [C ~> degC]
   real, dimension(CS%nk)   :: S_col_new ! New layer salinities [S ~> ppt]
@@ -164,68 +162,47 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   real :: nominal_z ! Nominal depth of interface when using z* [H ~> m or kg m-2]
   logical :: maximum_depths_set ! If true, the maximum depths of interface have been set.
   logical :: maximum_h_set      ! If true, the maximum layer thicknesses have been set.
-  real :: wt1, wt2
+  real :: wt, coord_res
 
   maximum_depths_set = allocated(CS%max_interface_depths)
   maximum_h_set = allocated(CS%max_layer_thickness)
 
   z_scale = 1.0 ; if (present(zScale)) z_scale = zScale
 
-  if (CS%only_improves .and. nz == CS%nk) then
-    call build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, CS%nk, depth, &
-        h, T, S, p_col, rho_col, RiA_ini, h_neglect, h_neglect_edge)
-  else
-    ! Work bottom recording potential density
-    call calculate_density(T, S, p_col, rho_col, eqn_of_state)
-    ! This ensures the potential density profile is monotonic
-    ! although not necessarily single valued.
-    do k = nz-1, 1, -1
-      rho_col(k) = min( rho_col(k), rho_col(k+1) )
-    enddo
-  endif
+  ! Work bottom recording potential density
+  call calculate_density(T, S, p_col, rho_col, eqn_of_state)
+  ! This ensures the potential density profile is monotonic
+  ! although not necessarily single valued.
+  do k = nz-1, 1, -1
+    rho_col(k) = min( rho_col(k), rho_col(k+1) )
+  enddo
+
 
   ! Interpolates for the target interface position with the rho_col profile
   ! Based on global density profile, interpolate to generate a new grid
-  k=floor(rmask)
-  wt2=rmask-k;wt1=(1-wt2)
-  call build_and_interpolate_grid(CS%interp_CS, rho_col, nz, h(:), z_col, &
-       CS%target_density(:,k), CS%nk, h1_col_new, z1_col_new, h_neglect, h_neglect_edge)
-  ! Can eliminate extra call here if the mask is close to a whole number
-  k=min(k+1,CS%ng)
-  call build_and_interpolate_grid(CS%interp_CS, rho_col, nz, h(:), z_col, &
-       CS%target_density(:,k), CS%nk, h2_col_new, z2_col_new, h_neglect, h_neglect_edge)
+  h_col_new(:)=0.0;z_col_new(:)=0.0
+  do k=1,CS%ng
+    wt=rmask(k)
+    if (wt>0.0) then
+      call build_and_interpolate_grid(CS%interp_CS, rho_col, nz, h(:), z_col, &
+           CS%target_density(:,k), CS%nk, h1_col_new, z1_col_new, h_neglect, h_neglect_edge)
+      h_col_new(:)=wt*h1_col_new(:)+h_col_new(:)
+      z_col_new(:)=wt*z1_col_new(:)+z_col_new(:)
+    endif
+  enddo
 
-  h_col_new(:)=wt1*h1_col_new(:)+wt2*h2_col_new(:)
-  z_col_new(:)=wt1*z1_col_new(:)+wt2*z2_col_new(:)
-
-  if (CS%only_improves .and. nz == CS%nk) then
-    ! Only move an interface if it improves the density fit
-    z_1 = 0.5 * ( z_col(1) + z_col(2) )
-    z_nz  = 0.5 * ( z_col(nz) + z_col(nz+1) )
-    do k = 1,CS%nk
-      p_col_new(k) = p_col(1) + ( 0.5 * ( z_col_new(K) + z_col_new(K+1) ) - z_1 ) / ( z_nz - z_1 ) * &
-          ( p_col(nz) - p_col(1) )
-    enddo
-    ! Remap from original h and T,S to get T,S_col_new
-    call remapping_core_h(remapCS, nz, h(:), T, CS%nk, h_col_new, T_col_new)
-    call remapping_core_h(remapCS, nz, h(:), S, CS%nk, h_col_new, S_col_new)
-    call build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, CS%nk, depth, &
-        h_col_new, T_col_new, S_col_new, p_col_new, r_col_new, RiA_new, h_neglect, h_neglect_edge)
-    do k= 2,CS%nk
-      if     ( abs(RiA_ini(K)) <= abs(RiA_new(K)) .and. z_col(K) > z_col_new(K-1) .and. &
-               z_col(K) < z_col_new(K+1)) then
-        z_col_new(K) = z_col(K)
-      endif
-    enddo
-  endif !only_improves
 
   ! Sweep down the interfaces and make sure that the interface is at least
   ! as deep as a nominal target z* grid
   nominal_z = 0.
   stretching = z_col(nz+1) / depth ! Stretches z* to z
-  i=anint(rmask);  j=min(i+1,CS%ng)
   do k = 2, CS%nk+1
-    nominal_z = nominal_z + (z_scale * (wt1*CS%coordinateResolution(k-1,i) + (1.-wt1)*CS%coordinateResolution(k-1,j))* stretching)
+    coord_res=0.0
+    do i=1,CS%ng
+      wt=rmask(i)
+      coord_res = coord_res+wt*CS%coordinateResolution(k-1,i)
+    enddo
+    nominal_z = nominal_z + (z_scale * (coord_res * stretching))
     z_col_new(k) = max( z_col_new(k), nominal_z )
     z_col_new(k) = min( z_col_new(k), z_col(nz+1) )
   enddo
@@ -242,62 +219,5 @@ subroutine build_hycom_2d_column(CS, rmask, remapCS, eqn_of_state, nz, depth, h,
   enddo ; endif
 end subroutine build_hycom_2d_column
 
-!> Calculate interface density anomaly w.r.t. the target.
-subroutine build_hycom1_target_anomaly(CS, rmask, remapCS, eqn_of_state, nz, depth, h, T, S, p_col, &
-                                       R, RiAnom, h_neglect, h_neglect_edge)
-  type(hycom_2d_CS),        intent(in)  :: CS     !< Coordinate control structure
-  real,                  intent(in)  :: rmask   !< region mask
-  type(remapping_CS),    intent(in)  :: remapCS !< Remapping parameters and options
-  type(EOS_type),        intent(in)  :: eqn_of_state !< Equation of state structure
-  integer,               intent(in)  :: nz     !< Number of levels
-  real,                  intent(in)  :: depth  !< Depth of ocean bottom (positive [H ~> m or kg m-2])
-  real, dimension(nz),   intent(in)  :: T      !< Temperature of column [C ~> degC]
-  real, dimension(nz),   intent(in)  :: S      !< Salinity of column [S ~> ppt]
-  real, dimension(nz),   intent(in)  :: h      !< Layer thicknesses [H ~> m or kg m-2]
-  real, dimension(nz),   intent(in)  :: p_col  !< Layer pressure [R L2 T-2 ~> Pa]
-  real, dimension(nz),   intent(out) :: R      !< Layer density [R ~> kg m-3]
-  real, dimension(nz+1), intent(out) :: RiAnom !< The interface density anomaly
-                                               !! w.r.t. the interface target
-                                               !! densities [R ~> kg m-3]
-  real,                  intent(in)  :: h_neglect !< A negligibly small width for the purpose of
-                                               !! cell reconstruction [H ~> m or kg m-2]
-  real,        optional, intent(in)  :: h_neglect_edge !< A negligibly small width for the purpose of
-                                                !! edge value calculation [H ~> m or kg m-2]
-  ! Local variables
-  integer   :: degree,k, g1, g2
-  real      :: wt1, wt2
-  real, dimension(nz)   :: rho_col ! Layer densities in a column [R ~> kg m-3]
-  real, dimension(nz,2) :: ppoly_E ! Polynomial edge values [R ~> kg m-3]
-  real, dimension(nz,2) :: ppoly_S ! Polynomial edge slopes [R H-1]
-  real, dimension(nz,DEGREE_MAX+1) :: ppoly_C ! Polynomial interpolant coeficients on the local 0-1 grid [R ~> kg m-3]
-
-  ! Work bottom recording potential density
-  call calculate_density(T, S, p_col, rho_col, eqn_of_state)
-  ! This ensures the potential density profile is monotonic
-  ! although not necessarily single valued.
-  do k = nz-1, 1, -1
-    rho_col(k) = min( rho_col(k), rho_col(k+1) )
-  enddo
-
-  call regridding_set_ppolys(CS%interp_CS, rho_col, nz, h, ppoly_E, ppoly_S, ppoly_C, &
-                             degree, h_neglect, h_neglect_edge)
-
-  R(1) = rho_col(1)
-  g1=floor(rmask);g2=min(g1+1,CS%ng)
-  wt2=rmask-g1;wt1=(1-wt2)
-  RiAnom(1) = ppoly_E(1,1) - (wt1*CS%target_density(1,g1)+wt2*CS%target_density(1,g2))
-  do k= 2,nz
-    R(k) = rho_col(k)
-    if (ppoly_E(k-1,2) > (wt1*CS%target_density(k,g1)+wt2*CS%target_density(k,g2))) then
-      RiAnom(k) = ppoly_E(k-1,2) - (wt1*CS%target_density(k,g1)+wt2*CS%target_density(k,g2))  !interface is heavier than target
-    elseif (ppoly_E(k,1) < (wt1*CS%target_density(k,g1)+wt2*CS%target_density(k,g2))) then
-      RiAnom(k) = ppoly_E(k,1)   - (wt1*CS%target_density(1,g1)+wt2*CS%target_density(1,g2))  !interface is lighter than target
-    else
-      RiAnom(k) = 0.0  !interface spans the target
-    endif
-  enddo
-  RiAnom(nz+1) = ppoly_E(nz,2) - (wt1*CS%target_density(nz+1,g1)+wt2*CS%target_density(nz+1,g2))
-
-end subroutine build_hycom1_target_anomaly
 
 end module coord_hycom_2d
