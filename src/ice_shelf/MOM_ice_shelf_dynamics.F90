@@ -437,6 +437,7 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
   character(len=200) :: IC_file,filename,inputdir
   character(len=40)  :: var_name
   character(len=40)  :: mdl = "MOM_ice_shelf_dyn"  ! This module's name.
+  character(len=200) :: config
   logical :: shelf_mass_is_dynamic, override_shelf_movement, active_shelf_dynamics
   logical :: debug
   integer :: i, j, isd, ied, jsd, jed, Isdq, Iedq, Jsdq, Jedq, iters
@@ -469,6 +470,10 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
                  "If true, the ice sheet mass can evolve with time.", &
                  default=.false.)
   override_shelf_movement = .false. ; active_shelf_dynamics = .false.
+  call get_param(param_file, mdl, "ICE_PROFILE_CONFIG", config, &
+                 "This specifies how the initial ice profile is specified. "//&
+                 "Valid values are: CHANNEL, FILE, and USER.", &
+                 fail_if_missing=.true.)
   if (shelf_mass_is_dynamic) then
     call get_param(param_file, mdl, "OVERRIDE_SHELF_MOVEMENT", override_shelf_movement, &
                  "If true, user provided code specifies the ice-shelf "//&
@@ -777,17 +782,27 @@ subroutine initialize_ice_shelf_dyn(param_file, Time, ISS, CS, G, US, diag, new_
       call pass_var(CS%AGlen_visc, G%domain, complete=.false.)
 
       !initialize boundary conditions
-      call initialize_ice_shelf_boundary_from_file(CS%u_face_mask_bdry, CS%v_face_mask_bdry, &
-                  CS%u_bdry_val, CS%v_bdry_val, CS%umask, CS%vmask, CS%h_bdry_val, &
-                  ISS%hmask,  ISS%h_shelf, G, US, param_file )
+      select case ( trim(config) )
+        case ("CHANNEL") ; call initialize_ice_shelf_boundary_channel(CS%u_face_mask_bdry, &
+                            CS%v_face_mask_bdry, CS%u_flux_bdry_val, CS%v_flux_bdry_val, &
+                            CS%u_bdry_val, CS%v_bdry_val, CS%umask, &
+                            CS%vmask, CS%h_bdry_val, ISS%hmask,  ISS%h_shelf, G, US, param_file )
+        case ("FILE") ;  call initialize_ice_shelf_boundary_from_file(CS%u_face_mask_bdry, &
+                              CS%v_face_mask_bdry, CS%u_bdry_val, CS%v_bdry_val, CS%umask, &
+                              CS%vmask, CS%h_bdry_val, &
+                              ISS%hmask,  ISS%h_shelf, G, US, param_file )
+     !initialize ice flow characteristic (velocities, bed elevation under the grounded part, etc) from file
+                        call initialize_ice_flow_from_file(CS%bed_elev,CS%u_shelf, CS%v_shelf, &
+                             CS%ground_frac, G, US, param_file)
+      end select
       call pass_var(ISS%hmask, G%domain, complete=.false.)
       call pass_var(CS%h_bdry_val, G%domain, complete=.true.)
       call pass_vector(CS%u_bdry_val, CS%v_bdry_val, G%domain, TO_ALL, BGRID_NE, complete=.false.)
       call pass_vector(CS%u_face_mask_bdry, CS%v_face_mask_bdry, G%domain, TO_ALL, BGRID_NE, complete=.false.)
 
       !initialize ice flow characteristic (velocities, bed elevation under the grounded part, etc) from file
-      call initialize_ice_flow_from_file(CS%bed_elev,CS%u_shelf, CS%v_shelf, CS%ground_frac, &
-                  G, US, param_file)
+!      call initialize_ice_flow_from_file(CS%bed_elev,CS%u_shelf, CS%v_shelf, CS%ground_frac, &
+!                  G, US, param_file)
       call pass_vector(CS%u_shelf, CS%v_shelf, G%domain, TO_ALL, BGRID_NE, complete=.true.)
       call pass_var(CS%ground_frac, G%domain, complete=.false.)
       call pass_var(CS%bed_elev, G%domain, complete=.true.)
