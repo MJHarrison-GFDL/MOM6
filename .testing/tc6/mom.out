@@ -1,0 +1,462 @@
+NOTE: MPP_DOMAINS_SET_STACK_SIZE: stack size set to    32768.
+NOTE: MPP_DOMAINS_SET_STACK_SIZE: stack size set to   960000.
+NOTE: ======== Model being driven by MOM_driver ========
+NOTE: callTree: o Program MOM_main, MOM_driver.F90
+ &OCEAN_SOLO_NML
+ DATE_INIT       = 3*1, 3*0,
+ CALENDAR        = julian          ,
+ MONTHS  =           0,
+ DAYS    =           0,
+ HOURS   =          12,
+ MINUTES =           0,
+ SECONDS =           0,
+ OCEAN_NTHREADS  =           1,
+ USE_HYPER_THREAD        = F
+ /
+NOTE: open_param_file: MOM_input has been opened successfully.
+NOTE: open_param_file: MOM_override has been opened successfully.
+ MOM_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_inc domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+
+WARNING: diag_manager_mod::diag_manager_init: DIAG_MANAGER_NML not found in input nml file.  Using defaults.
+
+
+WARNING: diag_manager_mod::diag_manager_init: DIAG_MANAGER_NML not found in input nml file.  Using defaults.
+
+NOTE: diag_manager_mod::diag_manager_init: diag_manager is using fms2_io
+NOTE: diag_manager_mod::diag_manager_init: prepend_date only supported when diag_manager_init is called with time_init present.
+ MOM_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_in domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+ MOM_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_in domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+
+WARNING: Open_file is appending .nc to the filename ./ocean_geometry
+
+
+WARNING: Open_file is appending .nc to the filename ./ocean_geometry
+
+ MOM_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_in domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+ MOM_Ice_Shelf_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_Ice_Shelf_inc domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+ MOM_Ice_Shelf_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_Ice_Shelf_in domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+NOTE: initialize_ice_shelf_thickness_channel  : setting thickness
+
+WARNING: Previous msg:REENTRANT_X = False             !   [Boolean] default = True
+
+
+WARNING: New message :REENTRANT_X = False             !   [Boolean] default = False
+
+
+WARNING: Encountered inconsistent documentation line for parameter REENTRANT_X!
+
+
+WARNING: Previous msg:REENTRANT_X = False             !   [Boolean] default = True
+
+
+WARNING: New message :REENTRANT_X = False             !   [Boolean] default = False
+
+
+WARNING: Encountered inconsistent documentation line for parameter REENTRANT_X!
+
+NOTE: initialize_ice_shelf_boundary_channel   : setting boundary
+NOTE: ISOMIP_initialization.F90, ISOMIP_initialize_thickness: setting thickness
+ MOM_in domain decomposition
+whalo =    4, ehalo =    4, shalo =    4, nhalo =    4
+  X-AXIS =   20
+  Y-AXIS =   10
+ MOM_in domain decomposition
+whalo =    2, ehalo =    2, shalo =    2, nhalo =    2
+  X-AXIS =   10
+  Y-AXIS =    5
+NOTE: MOM_ice_shelf.F90, initialize_ice_shelf: allocating fluxes.
+NOTE: MOM_ice_shelf.F90, initialize_ice_shelf: allocating forces.
+
+WARNING: Previous msg:DT_FORCING = 450.0              !   [s] default = 0.0
+
+
+WARNING: New message :DT_FORCING = 450.0              !   [s] default = 450.0
+
+
+WARNING: Encountered inconsistent documentation line for parameter DT_FORCING!
+
+
+WARNING: Previous msg:DT_FORCING = 450.0              !   [s] default = 0.0
+
+
+WARNING: New message :DT_FORCING = 450.0              !   [s] default = 450.0
+
+
+WARNING: Encountered inconsistent documentation line for parameter DT_FORCING!
+
+NOTE: Segment run length determined from ocean_solo_nml.
+
+WARNING: MOM_file_parser : DAYMAX over-ridden.  Line: 'DAYMAX = 2.0' in file MOM_override.
+
+
+WARNING: MOM_file_parser : DAYMAX over-ridden.  Line: 'DAYMAX = 2.0' in file MOM_override.
+
+
+WARNING: Unused line in MOM_input : SHELF_2EQ_GAMMA_T = 1.0E-04
+
+
+WARNING: Unused line in MOM_input : HMIX_FIXED = 20.0
+
+
+WARNING: Unused line in MOM_input : KVML = 0.0
+
+
+WARNING: Unused line in MOM_input : SHELF_2EQ_GAMMA_T = 1.0E-04
+
+
+WARNING: Unused line in MOM_input : HMIX_FIXED = 20.0
+
+
+WARNING: Unused line in MOM_input : KVML = 0.0
+
+
+WARNING: open_ASCII_file: File ./CPU_stats opened WRITEONLY already exists!
+
+
+WARNING: open_ASCII_file: File ./CPU_stats opened WRITEONLY already exists!
+
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   6.228935455666735E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after           29  iterations
+
+WARNING: open_ASCII_file: File ./ocean.stats opened WRITEONLY already exists!
+
+
+WARNING: open_ASCII_file: File ./ocean.stats opened WRITEONLY already exists!
+
+MOM Day       0.000      0: En 0.000000E+00, MaxCFL  0.00000, Mass 2.502461380970E+13, Salt  33.84866928768, Temp  -1.90000000000
+    Total Energy: 0000000000000000  0.0000000000000000E+00
+    Total Mass:   2.5024613809704324E+13, Change:   0.0000000000000000E+00 Error:  0.00000E+00 ( 0.0E+00)
+    Total Salt:   8.4704987689665833E+11, Change:   0.0000000000000000E+00 Error:  0.00000E+00 ( 0.0E+00)
+    Total Heat:  -1.8662105748587002E+17, Change:   0.0000000000000000E+00 Error:  0.00000E+00 ( 0.0E+00)
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   3.608575889103631E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   6.407961689511202E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   9.054001127504044E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   6.026306605107841E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   6.043394142198468E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   6.692530522052430E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   4.861830468362847E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   5.254234522165535E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   3.829933452247254E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   3.210207850116724E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   3.612658021315698E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   3.199211492634705E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   3.533758303512727E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.829968242955402E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.645622205947813E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.895316740973289E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.695110180222276E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.892156383149676E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.530870306198228E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.389176122303162E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.532096165901849E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.380315239892552E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.455268671557943E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+MOM Day       0.125     24: En 1.807536E-02, MaxCFL  0.20463, Mass 2.502462397455E+13, Salt  33.84865553856, Temp  -1.85634824642
+MOM Day       0.125 Energy/Mass: 1.80754E-02 Truncations 1004
+    Total Energy: 425A543AE74D70EF  4.5232918456576459E+11
+    Total Mass:   2.5024623974552891E+13, Change:   1.0164848565932939E+07 Error:  4.58597E-04 ( 1.8E-17)
+    Total Salt:   8.4704987689665820E+11, Change:  -2.2827148437500000E-05 Error: -2.28271E-05 (-2.7E-17)
+    Total Heat:  -1.8233358606781085E+17, Change:   4.2874714180591445E+15 Error:  1.27374E+01 (-7.0E-17)
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.290348190810583E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.216589656605791E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.263757722325264E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.156593481369002E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.187849273582540E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.137587864388156E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.105508345963700E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.121091823516405E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.069343931510710E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.082658629395763E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.068243843917528E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.052314663340879E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.061864051783431E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.037571030511861E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.047711951140720E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.038104928646371E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.023411698847482E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.026004292241230E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.008530714771512E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.009126624651996E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.009642294911416E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.005670263618651E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   2.006639070805390E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.994615974726548E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+MOM Day       0.250     48: En 1.351872E-02, MaxCFL  0.14891, Mass 2.502462509701E+13, Salt  33.84865402031, Temp  -1.85634808352
+    Total Energy: 4253B113C7994E86  3.3830096854922693E+11
+    Total Mass:   2.5024625097010184E+13, Change:   1.1224572899316978E+06 Error:  1.03969E-04 ( 4.2E-18)
+    Total Salt:   8.4704987689665833E+11, Change:   4.9804687500000004E-05 Error:  4.98047E-05 ( 5.9E-17)
+    Total Heat:  -1.8233357824545254E+17, Change:   7.8223583128437500E+09 Error:  9.35858E-01 (-5.1E-18)
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.992637176321405E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.982878024049495E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.972521056276015E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.967834750349998E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.958309300868758E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.954140214641997E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.951495342065557E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949869212121219E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949538635431219E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948830281834092E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948900954233591E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948792345529253E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948647006682291E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948524868848697E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948666281361737E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948899640748979E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949031956014360E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949010493529201E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949066709661060E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948944104384748E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948904953047742E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948821823994520E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948705331724403E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948538492954316E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+MOM Day       0.375     72: En 1.140381E-02, MaxCFL  0.14522, Mass 2.502462599994E+13, Salt  33.84865279899, Temp  -1.85634650288
+    Total Energy: 42509C6F37035725  2.8537604404536163E+11
+    Total Mass:   2.5024625999940145E+13, Change:   9.0292996665220952E+05 Error: -8.25158E-05 (-3.3E-18)
+    Total Salt:   8.4704987689665833E+11, Change:   2.5634765624999999E-05 Error:  2.56348E-05 ( 3.0E-17)
+    Total Heat:  -1.8233342957135587E+17, Change:   1.4867409668078125E+11 Error:  9.57922E-02 (-5.3E-19)
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948544113212027E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948582462156765E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948631982882427E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948596766791484E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948612728623111E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948574389851609E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948613603965258E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948566202607706E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948603771259234E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948543154974716E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948620643845375E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948678051733076E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948794309082795E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948825448038631E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948876467354313E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948890642989300E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.948987259504803E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949102100980524E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949255814430710E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949354577745152E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949489918096762E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.949643155596391E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.950110097439122E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+NOTE:  ice_shelf_solve_outer: nonlinear fractional residual =   1.950334452338585E-007
+NOTE:  ice_shelf_solve_outer: exiting nonlinear solve after            1  iterations
+MOM Day       0.500     96: En 9.574828E-03, MaxCFL  0.12929, Mass 2.502462690794E+13, Salt  33.84865157082, Temp  -1.85634402955
+    Total Energy: 424BE4D493969FD3  2.3960650730924863E+11
+    Total Mass:   2.5024626907939539E+13, Change:   9.0799939019527833E+05 Error: -2.23920E-04 (-8.9E-18)
+    Total Salt:   8.4704987689665833E+11, Change:  -4.8339843750000002E-05 Error: -4.83398E-05 (-5.7E-17)
+    Total Heat:  -1.8233319325286861E+17, Change:   2.3631848725200000E+11 Error:  5.87346E+00 (-3.2E-17)
+
+WARNING: open_ASCII_file: File exitcode opened WRITEONLY already exists!
+
+
+WARNING: open_ASCII_file: File exitcode opened WRITEONLY already exists!
+
+ MPP_DOMAINS_STACK high water mark=           0
+                               Memuse(MB) at Memory HiWaterMark=  0.000E+00  0.000E+00  0.000E+00  0.000E+00
+
+Tabulating mpp_clock statistics across      1 PEs...
+
+                                      hits          tmin          tmax          tavg          tstd  tfrac grain pemin pemax
+Total runtime                            1      0.578636      0.578636      0.578636      0.000000  1.000     0     0     0
+Initialization                           1      0.159572      0.159572      0.159572      0.000000  0.276     0     0     0
+Main loop                                1      0.416585      0.416585      0.416585      0.000000  0.720     0     0     0
+Termination                              1      0.000397      0.000397      0.000397      0.000000  0.001     0     0     0
+Ocean Initialization                     2      0.149254      0.149254      0.149254      0.000000  0.258    11     0     0
+Ocean                                   96      0.331206      0.331206      0.331206      0.000000  0.572     1     0     0
+Ocean dynamics                         192      0.265954      0.265954      0.265954      0.000000  0.460    11     0     0
+Ocean thermodynamics and tracers       288      0.056688      0.056688      0.056688      0.000000  0.098    11     0     0
+Ocean grid generation and remapp         0      0.000000      0.000000      0.000000      0.000000  0.000    11     0     0
+Ocean Other                            480      0.005468      0.005468      0.005468      0.000000  0.009    11     0     0
+(Ocean tracer advection)               192      0.010354      0.010354      0.010354      0.000000  0.018    21     0     0
+(Ocean diabatic driver)                 96      0.046300      0.046300      0.046300      0.000000  0.080    21     0     0
+(Ocean continuity equation *)            0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Ocean set BBL viscosity)               96      0.006423      0.006423      0.006423      0.000000  0.011    31     0     0
+(Ocean message passing *)              192      0.000162      0.000162      0.000162      0.000000  0.000    31     0     0
+(Ocean MOM_initialize_state)             2      0.023483      0.023483      0.023483      0.000000  0.041    31     0     0
+(Ocean init message passing *)           2      0.000107      0.000107      0.000107      0.000000  0.000    41     0     0
+(Ocean mixed layer restrat)              0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Ocean collective diagnostics)         384      0.000686      0.000686      0.000686      0.000000  0.001    31     0     0
+(Ocean Z-space diagnostics)              0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Ocean ALE)                              0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Stochastic EOS)                        96      0.000011      0.000011      0.000011      0.000000  0.000    31     0     0
+(SGS Temperature Variance)              96      0.000004      0.000004      0.000004      0.000000  0.000    31     0     0
+Ice shelf                               96      0.080765      0.080765      0.080765      0.000000  0.140     1     0     0
+ Ice shelf halo updates                 97      0.000105      0.000105      0.000105      0.000000  0.000    41     0     0
+(Ocean diagnostics framework)            0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Ocean diagnostics remapping)            0      0.000000      0.000000      0.000000      0.000000  0.000    41     0     0
+(Ocean diagnostics grid updates)       769      0.000339      0.000339      0.000339      0.000000  0.001    41     0     0
+(Ocean init message passing)             4      0.000007      0.000007      0.000007      0.000000  0.000    41     0     0
+(Ocean continuity reconstruction       578      0.010141      0.010141      0.010141      0.000000  0.018    41     0     0
+(Ocean continuity update)              578      0.000732      0.000732      0.000732      0.000000  0.001    41     0     0
+(Ocean continuity correction)          578      0.052677      0.052677      0.052677      0.000000  0.091    41     0     0
+(Ocean BT pre-calcs only)              768      0.019199      0.019199      0.019199      0.000000  0.033    41     0     0
+(Ocean BT pre-step halo updates)       768      0.001085      0.001085      0.001085      0.000000  0.002    41     0     0
+(Ocean BT stepping calcs only)        1920      0.081507      0.081507      0.081507      0.000000  0.141    41     0     0
+(Ocean BT stepping halo updates)      1728      0.000163      0.000163      0.000163      0.000000  0.000    41     0     0
+(Ocean BT post-calcs only)             576      0.002865      0.002865      0.002865      0.000000  0.005    41     0     0
+(Ocean BT post-step halo updates       384      0.000047      0.000047      0.000047      0.000000  0.000    41     0     0
+(Ocean BT global synch)                 96      0.000018      0.000018      0.000018      0.000000  0.000    41     0     0
+(Ocean Coriolis & mom advection)       192      0.012381      0.012381      0.012381      0.000000  0.021    31     0     0
+(Ocean continuity equation)            288      0.063643      0.063643      0.063643      0.000000  0.110    31     0     0
+(Ocean pressure force)                  96      0.005096      0.005096      0.005096      0.000000  0.009    31     0     0
+(Ocean vertical viscosity)             288      0.050483      0.050483      0.050483      0.000000  0.087    31     0     0
+(Ocean horizontal viscosity)            96      0.018318      0.018318      0.018318      0.000000  0.032    31     0     0
+(Ocean momentum increments)            192      0.000681      0.000681      0.000681      0.000000  0.001    31     0     0
+(Ocean message passing)                864      0.000161      0.000161      0.000161      0.000000  0.000    31     0     0
+(Ocean barotropic mode calc)           192      0.000249      0.000249      0.000249      0.000000  0.000    31     0     0
+(Ocean barotropic mode stepping)       192      0.105919      0.105919      0.105919      0.000000  0.183    31     0     0
+(Ocean barotropic forcing calc)        192      0.000661      0.000661      0.000661      0.000000  0.001    31     0     0
+(Ocean diabatic entrain)                96      0.016998      0.016998      0.016998      0.000000  0.029    31     0     0
+(Ocean mixed layer)                     96      0.015284      0.015284      0.015284      0.000000  0.026    31     0     0
+(Ocean vert remap)                      96      0.000015      0.000015      0.000015      0.000000  0.000    31     0     0
+(Ocean set_diffusivity)                192      0.004312      0.004312      0.004312      0.000000  0.007    31     0     0
+(Ocean KPP)                              0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Ocean tracer_columns)                  96      0.001305      0.001305      0.001305      0.000000  0.002    26     0     0
+(Ocean diabatic tridiag)               192      0.003816      0.003816      0.003816      0.000000  0.007    41     0     0
+(Ocean diabatic message passing)       192      0.000039      0.000039      0.000039      0.000000  0.000    41     0     0
+(Ocean find_uv_at_h)                    96      0.000491      0.000491      0.000491      0.000000  0.001    41     0     0
+(Ocean frazil)                         192      0.002692      0.002692      0.002692      0.000000  0.005    41     0     0
+(Ocean advect tracer)                   96      0.008708      0.008708      0.008708      0.000000  0.015    31     0     0
+(Ocean tracer halo updates)            384      0.000051      0.000051      0.000051      0.000000  0.000    41     0     0
+(Ocean tracer global synch)             96      0.000022      0.000022      0.000022      0.000000  0.000    41     0     0
+(Ocean diffuse tracer)                  96      0.001350      0.001350      0.001350      0.000000  0.002    31     0     0
+(Ocean epipycnal diffuse tracer)         0      0.000000      0.000000      0.000000      0.000000  0.000    31     0     0
+(Ocean surface forcing)                 97      0.006212      0.006212      0.006212      0.000000  0.011    31     0     0
+(Ocean forcing diagnostics)            192      0.000240      0.000240      0.000240      0.000000  0.000    41     0     0
+ MPP_STACK high water mark=           0
