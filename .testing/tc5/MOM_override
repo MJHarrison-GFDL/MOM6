@@ -9,8 +9,6 @@
 
 !#override ROTATE_INDEX = False
 !#override INDEX_TURNS = 3
-
-#override DAYMAX = 2.0
 !#override DEBUG = True
 
 DYNAMIC_SHELF_MASS = TRUE
