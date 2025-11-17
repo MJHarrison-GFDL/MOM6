@@ -1299,10 +1299,8 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
     elseif (reday < 1.0e11) then ; write(day_str, '(F15.3)') reday
     else ;                         write(day_str, '(ES15.9)') reday ; endif
 
-    if     (CS%prev_IS_energy_calls < 1000000)   then ; write(n_str, '(I6)') CS%prev_IS_energy_calls
-    elseif (CS%prev_IS_energy_calls < 10000000)  then ; write(n_str, '(I7)') CS%prev_IS_energy_calls
-    elseif (CS%prev_IS_energy_calls < 100000000) then ; write(n_str, '(I8)') CS%prev_IS_energy_calls
-    else                        ; write(n_str, '(I10)') CS%prev_IS_energy_calls ; endif
+    if (CS%prev_IS_energy_calls < 1000000) then ; write(n_str, '(I6)') CS%prev_IS_energy_calls
+    else ; write(n_str, '(I0)') CS%prev_IS_energy_calls ; endif
 
     write(CS%IS_fileenergy_ascii,'(A,",",A,", En ",ES22.16,", M ",ES11.5)') &
       trim(n_str), trim(day_str), US%L_T_to_m_s**2*KE_tot/mass_tot, US%RZL2_to_kg*mass_tot
@@ -2540,7 +2538,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
         endif
 
         if (CS%max_surface_slope>0) then
-          scale = min(CS%max_surface_slope/sqrt((sx**2)+(sy**2)),1.0)
+          scale = CS%max_surface_slope / max( sqrt((sx**2) + (sy**2)), CS%max_surface_slope )
           sx = scale*sx; sy = scale*sy
         endif
 
