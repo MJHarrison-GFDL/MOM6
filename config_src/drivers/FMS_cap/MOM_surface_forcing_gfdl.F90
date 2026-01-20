@@ -263,6 +263,8 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
                               ! factors [Q R C-1 ~> J m-3 degC-1]
   real :: sign_for_net_FW_bug ! Should be +1. but an old bug can be recovered by using -1 [nondim]
 
+  logical :: ice_shelf    ! True if there is an ice shelf present in the model domain
+
   call cpu_clock_begin(id_clock_forcing)
 
   isc_bnd = index_bounds(1) ; iec_bnd = index_bounds(2)
@@ -283,6 +285,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   fluxes%netFWGlobalAdj = 0.0
   fluxes%netFWGlobalScl = 0.0
 
+  ice_shelf=.false.;if (ALLOCATED(fluxes%frac_shelf_h)) ice_shelf = .true.
   ! allocation and initialization if this is the first time that this
   ! flux type has been used.
   if (fluxes%dt_buoy_accum < 0) then
@@ -318,7 +321,6 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
       fluxes%ustar_tidal(i,j) = CS%ustar_tidal(i,j)
     enddo ; enddo
 
-
   endif   ! endif for allocation and initialization
 
 
@@ -338,6 +340,7 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
   if (CS%area_surf < 0.0) then
     do j=js,je ; do i=is,ie
       work_sum(i,j) = G%areaT(i,j) * G%mask2dT(i,j)
+      if (ice_shelf) work_sum(i,j)=work_sum(i,j)*(1.0-fluxes%frac_shelf_h(i,j))
     enddo ; enddo
     CS%area_surf = reproducing_sum(work_sum, isr, ier, jsr, jer, unscale=US%L_to_m**2)
   endif    ! endif for allocation and initialization
@@ -391,6 +394,9 @@ subroutine convert_IOB_to_fluxes(IOB, fluxes, index_bounds, Time, valid_time, G,
                                      / CS%area_surf
           fluxes%salt_flux(is:ie,js:je) = fluxes%salt_flux(is:ie,js:je) - &
                                           fluxes%saltFluxGlobalAdj * G%mask2dT(is:ie,js:je)
+          if (ice_shelf) then
+            fluxes%salt_flux(is:ie,js:je) = fluxes%salt_flux(is:ie,js:je)*(1.0-fluxes%frac_shelf_h(is:ie,js:je))
+          endif
         endif
       endif
       fluxes%salt_flux_added(is:ie,js:je) = fluxes%salt_flux(is:ie,js:je) ! Diagnostic
