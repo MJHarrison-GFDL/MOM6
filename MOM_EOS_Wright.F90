@@ -18,6 +18,7 @@ implicit none ; private
 public calculate_compress_wright, calculate_density_wright, calculate_spec_vol_wright
 public calculate_density_derivs_wright, calculate_specvol_derivs_wright
 public calculate_density_second_derivs_wright
+public calculate_density_wright_full
 !public int_density_dz_wright, int_spec_vol_dp_wright
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
@@ -32,6 +33,10 @@ public calculate_density_second_derivs_wright
 interface calculate_density_wright
   module procedure calculate_density_scalar_wright, calculate_density_array_wright
 end interface calculate_density_wright
+
+interface calculate_density_wright_full
+  module procedure calculate_density_scalar_wright_full, calculate_density_array_wright_full
+end interface calculate_density_wright_full
 
 !> Compute the in situ specific volume of sea water (in [m3 kg-1]), or an anomaly with respect
 !! to a reference specific volume, from salinity (in psu), potential temperature (in deg C), and
@@ -102,6 +107,49 @@ subroutine calculate_density_scalar_wright(T, S, pressure, rho, rho_ref)
   rho = rho0(1)
 
 end subroutine calculate_density_scalar_wright
+
+subroutine calculate_density_scalar_Wright_full(T, S, pressure, rho)
+  real, intent(in) :: T        !< Potential temperature relative to the surface [degC]
+  real, intent(in) :: S        !< Salinity [PSU]
+  real, intent(in) :: pressure !< Pressure [Pa]
+  real, intent(inout) :: rho      !< in situ density [kg m-3].  
+
+  ! Local variables
+  real :: al0     ! The specific volume at 0 lambda in the Wright EOS [m3 kg-1]
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
+
+  real, dimension(1) :: T0, S0, pressure0, rho0
+
+  T0(1)=T;S0(1)=S;pressure0(1)=pressure
+  call calculate_density_array_wright_full(T0, S0, pressure0, rho0, 1, 1)
+  rho=rho0(1)
+  
+end subroutine calculate_density_scalar_Wright_full
+
+subroutine calculate_density_array_Wright_full(T, S, pressure, rho, start, npts)
+  real, dimension(:), intent(in) :: T        !< Potential temperature relative to the surface [degC]
+  real, dimension(:), intent(in) :: S        !< Salinity [PSU]
+  real, dimension(:), intent(in) :: pressure !< Pressure [Pa]
+  real, dimension(:), intent(inout) :: rho      !< in situ density [kg m-3].
+  integer,            intent(in)    :: start    !< the starting point in the arrays.
+  integer,            intent(in)    :: npts     !< the number of values to calculate.  
+  
+  ! Local variables
+  real :: al0     ! The specific volume at 0 lambda in the Wright EOS [m3 kg-1]
+  real :: p0      ! The pressure offset in the Wright EOS [Pa]
+  real :: lambda  ! The sound speed squared at 0 alpha in the Wright EOS [m2 s-2]
+  integer :: j
+
+
+  do j=start,start+npts-1
+     al0 = a0 + (a1*T(j) + a2*S(j))
+     p0 = b0 + ( b4*S(j) + T(j) * (b1 + (T(j)*(b2 + b3*T(j)) + b5*S(j))) )
+     lambda = c0 + ( c4*S(j) + T(j) * (c1 + (T(j)*(c2 + c3*T(j)) + c5*S(j))) )
+     rho(j) = (pressure(j) + p0) / (lambda + al0*(pressure(j) + p0))
+  enddo
+  
+end subroutine calculate_density_array_Wright_full
 
 !> This subroutine computes the in situ density of sea water (rho in
 !! [kg m-3]) from salinity (S [PSU]), potential temperature
