@@ -7,7 +7,7 @@ use MOM_error_handler, only : MOM_error, FATAL, WARNING
 use MOM_string_functions, only : uppercase
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_EOS_linear, only : calculate_density_linear
-use MOM_EOS_Wright, only : calculate_density_wright
+use MOM_EOS_Wright, only : calculate_density_wright, calculate_density_wright_full
 use MOM_file_parser, only : param_file_type, get_param
 
 implicit none ; private
@@ -49,15 +49,17 @@ end type EOS_type
 integer, parameter, public :: EOS_LINEAR = 1 !< A named integer specifying an equation of state
 integer, parameter, public :: EOS_UNESCO = 2 !< A named integer specifying an equation of state
 integer, parameter, public :: EOS_WRIGHT = 3 !< A named integer specifying an equation of state
-integer, parameter, public :: EOS_TEOS10 = 4 !< A named integer specifying an equation of state
-integer, parameter, public :: EOS_NEMO   = 5 !< A named integer specifying an equation of state
+integer, parameter, public :: EOS_WRIGHT_FULL = 4 !< A named integer specifying an equation of state
+integer, parameter, public :: EOS_TEOS10 = 5 !< A named integer specifying an equation of state
+integer, parameter, public :: EOS_NEMO   = 6 !< A named integer specifying an equation of state
 
 character*(10), parameter :: EOS_LINEAR_STRING = "LINEAR" !< A string for specifying the equation of state
 character*(10), parameter :: EOS_UNESCO_STRING = "UNESCO" !< A string for specifying the equation of state
 character*(10), parameter :: EOS_WRIGHT_STRING = "WRIGHT" !< A string for specifying the equation of state
+character*(12), parameter :: EOS_WRIGHT_FULL_STRING = "WRIGHT_FULL" !< A string for specifying the equation of state
 character*(10), parameter :: EOS_TEOS10_STRING = "TEOS10" !< A string for specifying the equation of state
 character*(10), parameter :: EOS_NEMO_STRING   = "NEMO"   !< A string for specifying the equation of state
-character*(10), parameter :: EOS_DEFAULT = EOS_WRIGHT_STRING !< The default equation of state
+character*(12), parameter :: EOS_DEFAULT = EOS_WRIGHT_FULL_STRING !< The default equation of state
 
 integer, parameter :: TFREEZE_LINEAR = 1  !< A named integer specifying a freezing point expression
 integer, parameter :: TFREEZE_MILLERO = 2 !< A named integer specifying a freezing point expression
@@ -82,7 +84,7 @@ contains
   !> Initializes EOS_type by allocating and reading parameters
 subroutine EOS_init(param_file, EOS, US)
   type(param_file_type), intent(in) :: param_file !< Parameter file structure
-  type(EOS_type),        pointer    :: EOS !< Equation of state structure
+  type(EOS_type)    :: EOS !< Equation of state structure
   type(unit_scale_type), intent(in) :: US  !< A dimensional unit scaling type
   optional :: US
   ! Local variables
@@ -90,7 +92,7 @@ subroutine EOS_init(param_file, EOS, US)
   character(len=40)  :: mdl = "MOM_EOS" ! This module's name.
   character(len=40)  :: tmpstr
 
-  if (.not.associated(EOS)) call EOS_allocate(EOS)
+!  if (.not.associated(EOS)) call EOS_allocate(EOS)
 
   ! Read all relevant parameters and write them to the model log.
 !  call log_version(param_file, mdl, version, "")
@@ -106,7 +108,9 @@ subroutine EOS_init(param_file, EOS, US)
     case (EOS_UNESCO_STRING)
       EOS%form_of_EOS = EOS_UNESCO
     case (EOS_WRIGHT_STRING)
-      EOS%form_of_EOS = EOS_WRIGHT
+       EOS%form_of_EOS = EOS_WRIGHT
+    case (EOS_WRIGHT_FULL_STRING)
+      EOS%form_of_EOS = EOS_WRIGHT_FULL       
     case (EOS_TEOS10_STRING)
       EOS%form_of_EOS = EOS_TEOS10
     case (EOS_NEMO_STRING)
@@ -189,7 +193,7 @@ end subroutine EOS_init
 
 subroutine extract_member_EOS(EOS, form_of_EOS, form_of_TFreeze, EOS_quadrature, Compressible, &
                               Rho_T0_S0, drho_dT, dRho_dS, TFr_S0_P0, dTFr_dS, dTFr_dp)
-  type(EOS_type),    pointer     :: EOS !< Equation of state structure
+  type(EOS_type)     :: EOS !< Equation of state structure
   integer, optional, intent(out) :: form_of_EOS !< A coded integer indicating the equation of state to use.
   integer, optional, intent(out) :: form_of_TFreeze !< A coded integer indicating the expression for
                                        !! the potential temperature of the freezing point.
@@ -225,7 +229,7 @@ subroutine calculate_density_scalar(T, S, pressure, rho, EOS, rho_ref, scale)
   real,           intent(in)  :: S        !< Salinity [ppt]
   real,           intent(in)  :: pressure !< Pressure [Pa] or [R L2 T-2 ~> Pa]
   real,           intent(out) :: rho      !< Density (in-situ if pressure is local) [kg m-3] or [R ~> kg m-3]
-  type(EOS_type), pointer     :: EOS      !< Equation of state structure
+  type(EOS_type)              :: EOS      !< Equation of state structure
   real, optional, intent(in)  :: rho_ref  !< A reference density [kg m-3]
   real, optional, intent(in)  :: scale    !< A multiplicative factor by which to scale density in
                                           !! combination with scaling given by US [various]
@@ -233,8 +237,8 @@ subroutine calculate_density_scalar(T, S, pressure, rho, EOS, rho_ref, scale)
   real :: rho_scale ! A factor to convert density from kg m-3 to the desired units [R m3 kg-1 ~> 1]
   real :: p_scale   ! A factor to convert pressure to units of Pa [Pa T2 R-1 L-2 ~> 1]
 
-  if (.not.associated(EOS)) call MOM_error(FATAL, &
-    "calculate_density_scalar called with an unassociated EOS_type EOS.")
+!  if (.not.associated(EOS)) call MOM_error(FATAL, &
+!    "calculate_density_scalar called with an unassociated EOS_type EOS.")
 
   p_scale = EOS%RL2_T2_to_Pa
 
@@ -245,7 +249,9 @@ subroutine calculate_density_scalar(T, S, pressure, rho, EOS, rho_ref, scale)
 !    case (EOS_UNESCO)
 !      call MPP_ERROR(FATAL,'UNESCO not implememted here')
     case (EOS_WRIGHT)
-      call calculate_density_wright(T, S, p_scale*pressure, rho, rho_ref)
+       call calculate_density_wright(T, S, p_scale*pressure, rho, rho_ref)
+    case (EOS_WRIGHT_FULL)
+      call calculate_density_wright_full(T, S, p_scale*pressure, rho)       
 !    case (EOS_TEOS10)
 !      call MPP_ERROR(FATAL,'TEOS10 not implememted here')
 !      call calculate_density_teos10(T, S, p_scale*pressure, rho, rho_ref)
@@ -271,7 +277,7 @@ subroutine calculate_density_1d(T, S, pressure, rho, EOS, dom, rho_ref, scale)
   real, dimension(:),    intent(in)    :: S        !< Salinity [ppt]
   real, dimension(:),    intent(in)    :: pressure !< Pressure [R L2 T-2 ~> Pa]
   real, dimension(:),    intent(inout) :: rho      !< Density (in-situ if pressure is local) [R ~> kg m-3]
-  type(EOS_type),        pointer       :: EOS      !< Equation of state structure
+  type(EOS_type)                      :: EOS      !< Equation of state structure
   integer, dimension(2), optional, intent(in) :: dom   !< The domain of indices to work on, taking
                                                        !! into account that arrays start at 1.
   real,                  optional, intent(in) :: rho_ref !< A reference density [kg m-3]
@@ -285,8 +291,8 @@ subroutine calculate_density_1d(T, S, pressure, rho, EOS, dom, rho_ref, scale)
   real, dimension(size(rho)) :: pres  ! Pressure converted to [Pa]
   integer :: i, is, ie, npts
 
-  if (.not.associated(EOS)) call MOM_error(FATAL, &
-    "calculate_density_1d called with an unassociated EOS_type EOS.")
+!  if (.not.associated(EOS)) call MOM_error(FATAL, &
+!    "calculate_density_1d called with an unassociated EOS_type EOS.")
 
   if (present(dom)) then
     is = dom(1) ; ie = dom(2) ; npts = 1 + ie - is
@@ -326,14 +332,14 @@ subroutine calculate_density_array(T, S, pressure, rho, start, npts, EOS, rho_re
   real, dimension(:), intent(inout) :: rho      !< Density (in-situ if pressure is local) [kg m-3] or [R ~> kg m-3]
   integer,            intent(in)    :: start    !< Start index for computation
   integer,            intent(in)    :: npts     !< Number of point to compute
-  type(EOS_type),     pointer       :: EOS      !< Equation of state structure
+  type(EOS_type)       :: EOS      !< Equation of state structure
   real,                  optional, intent(in) :: rho_ref  !< A reference density [kg m-3]
   real,                  optional, intent(in) :: scale    !< A multiplicative factor by which to scale density
                                                 !! in combination with scaling given by US [various]
   integer :: j
 
-  if (.not.associated(EOS)) call MOM_error(FATAL, &
-    "calculate_density_array called with an unassociated EOS_type EOS.")
+!  if (.not.associated(EOS)) call MOM_error(FATAL, &
+!    "calculate_density_array called with an unassociated EOS_type EOS.")
 
   select case (EOS%form_of_EOS)
     case (EOS_LINEAR)
@@ -342,7 +348,9 @@ subroutine calculate_density_array(T, S, pressure, rho, start, npts, EOS, rho_re
 !    case (EOS_UNESCO)
 !      call calculate_density_unesco(T, S, pressure, rho, start, npts, rho_ref)
     case (EOS_WRIGHT)
-      call calculate_density_wright(T, S, pressure, rho, start, npts, rho_ref)
+       call calculate_density_wright(T, S, pressure, rho, start, npts, rho_ref)
+    case (EOS_WRIGHT_FULL)
+      call calculate_density_wright_full(T, S, pressure, rho, start, npts)       
 !    case (EOS_TEOS10)
 !      call calculate_density_teos10(T, S, pressure, rho, start, npts, rho_ref)
 !    case (EOS_NEMO)
@@ -359,16 +367,16 @@ end subroutine calculate_density_array
 
 !> Allocates EOS_type
 subroutine EOS_allocate(EOS)
-  type(EOS_type), pointer :: EOS !< Equation of state structure
+  type(EOS_type) :: EOS !< Equation of state structure
 
-  if (.not.associated(EOS)) allocate(EOS)
+!  if (.not.associated(EOS)) allocate(EOS)
 end subroutine EOS_allocate
 
 !> Deallocates EOS_type
 subroutine EOS_end(EOS)
-  type(EOS_type), pointer :: EOS !< Equation of state structure
+  type(EOS_type) :: EOS !< Equation of state structure
 
-  if (associated(EOS)) deallocate(EOS)
+!  if (associated(EOS)) deallocate(EOS)
 end subroutine EOS_end
 
 end module MOM_EOS
