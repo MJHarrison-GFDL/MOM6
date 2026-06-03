@@ -4,7 +4,7 @@ module MOM_error_handler
 implicit none ; private
 
 ! These routines are found in this module.
-public :: MOM_error, MOM_mesg
+public :: MOM_error, MOM_mesg, is_root_pe
 !> Integer parameters encoding the severity of an error message
 public :: NOTE, WARNING, FATAL
 public :: stdlog, stdout
@@ -28,6 +28,12 @@ integer function stdlog()
   stdlog = -1
 
 end function stdlog
+
+logical function is_root_pe()
+
+  is_root_pe = .true.
+
+end function is_root_pe
 
 !> This provides a convenient interface for writing an informative comment, depending
 !! on the model's current verbosity setting and the verbosity level for this message.
