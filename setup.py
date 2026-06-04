@@ -9,7 +9,7 @@ regrid  = Extension(name = 'regrid',
                 include_dirs = ['.mod',],
                 library_dirs = ['.'],
                 libraries = ['Regrid'],
-                sources = ['regrid.f90'])
+                sources = ['regrid.f90','remap.f90'])
 
 
 if __name__ == '__main__':

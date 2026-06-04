@@ -1,6 +1,6 @@
 import numpy as np
 import regrid
-import remap
+#import remap
 import matplotlib.pyplot as plt#import matplotlib.pyplot as plt
 
 
@@ -75,7 +75,7 @@ nfig=1
 
 print('====== ZSTAR (UNIFORM) ======')
 #Uniform Resolution
-CoordRes=z0[:-1]-z0[1:]
+CoordVals=z0
 #Perturb the Surface
 z0[0]=z0[0]+0.1
 z_in = z0[np.newaxis,np.newaxis,:]
@@ -87,22 +87,19 @@ fs_in = fs[np.newaxis,:]
 zbot_in=zbot[np.newaxis,:]
 destroy_MOM_PF()
 write_MOM_PF()
-z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'Z*',CoordRes,'PCM')
-#print('Initial Interface Positions=',np.squeeze(z_in))
-#print('Final Interface Positions=',np.squeeze(z_out))
+z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'Z*',CoordVals,'PCM',False)
 diff=z_out-z_in
 print('RMS motion= ',np.std(diff))
+print('Initial Interface Positions=',np.squeeze(z_in))
+print('Final Interface Positions=',np.squeeze(z_out))
 if VERBOSE:
-#    print('Initial Interface Positions=',np.squeeze(z_in))
-#    print('Final Interface Positions=',np.squeeze(z_out))
     plt.figure(nfig);nfig=nfig+1
     plt.plot(np.squeeze(z_in).T,'bo')
     plt.plot(np.squeeze(z_out).T,'rx')
     plt.title('Interface Positions: Initial(o);Final(x)')
 
 print('====== ZSTAR (FNC1) ======')
-#Uniform Resolution
-CoordRes=z0[:-1]-z0[1:]
+CoordVals=z0 # This is ignored in the subsequent call to update_grid.
 #Perturb the Surface
 z0[0]=z0[0]+0.1
 z_in = z0[np.newaxis,np.newaxis,:]
@@ -114,15 +111,14 @@ fs_in = fs[np.newaxis,:]
 zbot_in=zbot[np.newaxis,:]
 destroy_MOM_PF()
 write_MOM_PF(ale_coord_config="FNC1:1.0,100.,0,1.e-6",ale_units="m")
-z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'Z*',CoordRes,'PCM')
-#print('Initial Interface Positions=',np.squeeze(z_in))
-#print('Final Interface Positions=',np.squeeze(z_out))
+z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'Z*',CoordVals,'PCM',False)
+print('Initial Interface Positions=',np.squeeze(z_in))
+print('Final Interface Positions=',np.squeeze(z_out))
 diff=z_out-z_in
 print('RMS motion= ',np.std(diff))
 
+
 if VERBOSE:
-#    print('Initial Interface Positions=',np.squeeze(z_in))
-#    print('Final Interface Positions=',np.squeeze(z_out))
     plt.figure(nfig);nfig=nfig+1
     plt.plot(np.squeeze(z_in).T,'bo')
     plt.plot(np.squeeze(z_out).T,'rx')
@@ -134,8 +130,8 @@ RHO_T0_S0=1000.
 dRdT=-0.2
 dRdS=0.8
 rho=RHO_T0_S0+dRdT*T + dRdS*S
-CoordRes=rho
-print(CoordRes)
+CoordVals=np.linspace(rho[0],rho[-1],n0+1)
+print(CoordVals)
 #Perturb the Surface
 z0[0]=z0[0]+0.1
 z_in = z0[np.newaxis,np.newaxis,:]
@@ -148,8 +144,10 @@ zbot_in=zbot[np.newaxis,:]
 destroy_MOM_PF()
 write_MOM_PF(ale_coord_config="\"RFNC1:10,1026.96,1027.12,1027.28,1.065,1028.4,0.001,1\"",ale_units="kg m^-3",eos='LINEAR',interpolation_scheme='PLM')
 #write_MOM_PF(ale_coord_config="\"RFNC1:10,1026.96,1027.12,1027.28,1.12,1028.4,0.001,0\"",ale_units="kg m^-3",eos='LINEAR',interpolation_scheme='PLM')
-z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'RHO',CoordRes,'PCM')
+z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'RHO',CoordVals,'PCM',True)
 diff=z_out-z_in
+print('Initial Interface Positions=',np.squeeze(z_in))
+print('Final Interface Positions=',np.squeeze(z_out))
 print('RMS motion= ',np.std(diff))
 
 if VERBOSE:
@@ -163,8 +161,6 @@ if VERBOSE:
 
 print('====== RHO (WRIGHT;RFNC1) ======')
 rho=wright_eos(T,S,p=2.e7)
-CoordRes=rho
-print(CoordRes)
 #Perturb the Surface
 z0[0]=z0[0]+0.1
 z_in = z0[np.newaxis,np.newaxis,:]
@@ -175,10 +171,12 @@ ps_in = ps[np.newaxis,:]
 fs_in = fs[np.newaxis,:]
 zbot_in=zbot[np.newaxis,:]
 destroy_MOM_PF()
-write_MOM_PF(ale_coord_config="RFNC1:10,1036.5,1036.67,1036.8,0.8,1037.62,0.001,1",ale_units="kg m^-3",eos='WRIGHT',interpolation_scheme='PLM',p_ref=2.e7)
-z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'RHO',CoordRes,'PCM')
+write_MOM_PF(ale_coord_config="RFNC1:10,1036.5,1036.67,1036.8,0.8,1037.62,0.1,1",ale_units="kg m^-3",eos='WRIGHT',interpolation_scheme='PLM',p_ref=2.e7)
+z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'RHO',CoordVals,'PCM',False)
 diff=z_out-z_in
 print('RMS motion= ',np.std(diff))
+print('Initial Interface Positions=',np.squeeze(z_in))
+print('Final Interface Positions=',np.squeeze(z_out))
 
 if VERBOSE:
 #    print('Initial Interface Positions=',np.squeeze(z_in))
@@ -188,32 +186,32 @@ if VERBOSE:
     plt.plot(np.squeeze(z_out).T,'rx')
     plt.title('Interface Positions: Initial(o);Final(x)')
 
-print('====== HYCOM1 (WRIGHT;RFNC1) ======')
-rho=wright_eos(T,S,p=2.e7)
-CoordRes=rho
-print(CoordRes)
-#Perturb the Surface
-z0[0]=z0[0]+0.1
-z_in = z0[np.newaxis,np.newaxis,:]
-T_in = T[np.newaxis,np.newaxis,:]
-S_in = S[np.newaxis,np.newaxis,:]
-z_out = np.zeros(z_in.shape)
-ps_in = ps[np.newaxis,:]
-fs_in = fs[np.newaxis,:]
-zbot_in=zbot[np.newaxis,:]
-destroy_MOM_PF()
-write_MOM_PF(ale_coord_config="HYBRID:hycom1_10.nc,sigma2",ale_units="kg m^-3",eos='WRIGHT',interpolation_scheme='PLM',p_ref=2.e7)
-z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'HYCOM1',CoordRes,'PCM')
-diff=z_out-z_in
-print('RMS motion= ',np.std(diff))
+# print('====== HYCOM1 (WRIGHT;RFNC1) ======')
+# rho=wright_eos(T,S,p=2.e7)
+# CoordRes=rho
+# print(CoordRes)
+# #Perturb the Surface
+# z0[0]=z0[0]+0.1
+# z_in = z0[np.newaxis,np.newaxis,:]
+# T_in = T[np.newaxis,np.newaxis,:]
+# S_in = S[np.newaxis,np.newaxis,:]
+# z_out = np.zeros(z_in.shape)
+# ps_in = ps[np.newaxis,:]
+# fs_in = fs[np.newaxis,:]
+# zbot_in=zbot[np.newaxis,:]
+# destroy_MOM_PF()
+# write_MOM_PF(ale_coord_config="HYBRID:hycom1_10.nc,sigma2",ale_units="kg m^-3",eos='WRIGHT',interpolation_scheme='PLM',p_ref=2.e7)
+# z_out=regrid.regrid_mod.update_grid(z_in,T_in,S_in,zbot,ps_in,fs_in,'HYCOM1',CoordRes,'PCM')
+# diff=z_out-z_in
+# print('RMS motion= ',np.std(diff))
 
-if VERBOSE:
-#    print('Initial Interface Positions=',np.squeeze(z_in))
-#    print('Final Interface Positions=',np.squeeze(z_out))
-    plt.figure(nfig);nfig=nfig+1
-    plt.plot(np.squeeze(z_in).T,'bo')
-    plt.plot(np.squeeze(z_out).T,'rx')
-    plt.title('Interface Positions: Initial(o);Final(x)')
+# if VERBOSE:
+# #    print('Initial Interface Positions=',np.squeeze(z_in))
+# #    print('Final Interface Positions=',np.squeeze(z_out))
+#     plt.figure(nfig);nfig=nfig+1
+#     plt.plot(np.squeeze(z_in).T,'bo')
+#     plt.plot(np.squeeze(z_out).T,'rx')
+#     plt.title('Interface Positions: Initial(o);Final(x)')
 
 
 

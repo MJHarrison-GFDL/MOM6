@@ -127,7 +127,7 @@ contains
     call initialize_remapping(remapCS,remapping_scheme)
     call initialize_regridding(CS, GV, US, max_depth, PF, 'MOM', coord_mode )
     if (override_targets) then
-       call set_target_densities(CS,coord_values(1:CS%nk+1))
+       call set_target_densities(CS,coord_values)
     endif
     
     
