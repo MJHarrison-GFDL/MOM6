@@ -94,6 +94,7 @@ type, public :: PressureForce_FV_CS ; private
   integer :: id_e_tidal_sal = -1 !< Diagnostic identifier
   integer :: id_e_sal = -1 !< Diagnostic identifier
   integer :: id_rho_pgf = -1 !< Diagnostic identifier
+  integer :: id_rho_pgf_grad = -1 !< Diagnostic identifier
   integer :: id_rho_stanley_pgf = -1 !< Diagnostic identifier
   integer :: id_p_stanley = -1 !< Diagnostic identifier
   integer :: id_MassWt_u = -1 !< Diagnostic identifier
@@ -1060,9 +1061,13 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, 
     T_top, &    ! Temperature of top layer used with correction_intxpa [C ~> degC]
     S_top, &    ! Salinity of top layer used with correction_intxpa [S ~> ppt]
     rho_top     ! Density anomaly of top layer used in calculating intx_pa_cor and inty_pa_cor
+  !MJH should only allocate when needed
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: &
     rho_pgf, rho_stanley_pgf ! Density [R ~> kg m-3] from EOS with and without SGS T variance
                              ! in Stanley parameterization.
+  real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: &
+    rho_pgf_grad  ! Density [R L-1 ~> kg m-4] from EOS with  without SGS T variance
+  !!MJH
   real, dimension(SZI_(G),SZJ_(G),SZK_(G)) :: &
     p_stanley   ! Pressure [R L2 T-2 ~> Pa] estimated with Rho_0
   real :: zeros(SZI_(G))     ! An array of zero values that can be used as an argument [various]
@@ -1904,51 +1909,66 @@ subroutine PressureForce_FV_Bouss(h, tv, PFu, PFv, G, GV, US, CS, ALE_CSp, ADp, 
         eta(i,j) = eta(i,j) + e_sal(i,j)*GV%Z_to_H
       enddo ; enddo
     endif
-  endif
+ endif
 
-  if (CS%use_stanley_pgf) then
+  if (CS%use_stanley_pgf .or. &
+      CS%id_p_stanley>0 .or. CS%id_rho_pgf>0 .or. &
+      CS%id_rho_pgf_grad > 0 .or. CS%id_rho_stanley_pgf>0) then
     ! Calculated diagnostics related to the Stanley parameterization
     zeros(:) = 0.0
     EOSdom_h(:) = EOS_domain(G%HI)
-    if ((CS%id_p_stanley>0) .or. (CS%id_rho_pgf>0) .or. (CS%id_rho_stanley_pgf>0)) then
+    if ((CS%id_p_stanley>0) .or. (CS%id_rho_pgf>0) .or. (CS%id_rho_stanley_pgf>0) &
+        .or. (CS%id_rho_pgf_grad>0)) then
       ! Find the pressure at the mid-point of each layer.
       H_to_RL2_T2 = GV%g_Earth*GV%H_to_RZ
       if (use_p_atm) then
-        do j=js,je ; do i=is,ie
+        do j=js-1,je+1 ; do i=is-1,ie+1
           p_stanley(i,j,1) = 0.5*h(i,j,1) * H_to_RL2_T2 + p_atm(i,j)
         enddo ; enddo
       else
-        do j=js,je ; do i=is,ie
+        do j=js-1,je+1 ; do i=is-1,ie+1
           p_stanley(i,j,1) = 0.5*h(i,j,1) * H_to_RL2_T2
         enddo ; enddo
       endif
-      do k=2,nz ; do j=js,je ; do i=is,ie
+      do k=2,nz ; do j=js-1,je+1 ; do i=is-1,ie+1
         p_stanley(i,j,k) = p_stanley(i,j,k-1) + 0.5*(h(i,j,k-1) + h(i,j,k)) * H_to_RL2_T2
       enddo ; enddo ; enddo
-    endif
-    if (CS%id_p_stanley>0) call post_data(CS%id_p_stanley, p_stanley, CS%diag)
-    if (CS%id_rho_pgf>0) then
-      do k=1,nz ; do j=js,je
-        call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p_stanley(:,j,k), zeros, &
+      if (CS%id_p_stanley>0) call post_data(CS%id_p_stanley, p_stanley, CS%diag)
+      if (CS%id_rho_pgf>0 .or. CS%id_rho_pgf_grad>0) then
+         do k=1,nz ; do j=js-1,je+1
+           call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p_stanley(:,j,k), zeros, &
                                zeros, zeros, rho_pgf(:,j,k), tv%eqn_of_state, EOSdom_h)
-      enddo ; enddo
-      call post_data(CS%id_rho_pgf, rho_pgf, CS%diag)
-    endif
-    if (CS%id_rho_stanley_pgf>0) then
-      do k=1,nz ; do j=js,je
-        call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p_stanley(:,j,k), tv%varT(:,j,k), &
+         enddo; enddo
+         if (CS%id_rho_pgf>0) call post_data(CS%id_rho_pgf, rho_pgf, CS%diag)
+         if (CS%id_rho_pgf_grad>0) then
+
+            do k=1,nz ; do j=js,je ; do i=is,ie
+              rho_pgf_grad(i,j,k) = (((rho_pgf(i+1,j,K)*h(i+1,j,k)) - &
+                   (rho_pgf(i-1,j,K)*h(i-1,j,k))) * &
+                   (G%IdxCu(I,j)+G%IdxCu(I-1,j)) **2.0  + &
+                   ((rho_pgf(i,j+1,K)*h(i,j+1,k)) - &
+                   (rho_pgf(i,j-1,K)*h(i,j-1,k))) * &
+                   (G%IdyCv(i,J)+G%IdyCv(i,J-1)) **2.0)**0.5) / &
+                   (h(i,j,k) + h_neglect)
+            enddo; enddo ; enddo
+            call post_data(CS%id_rho_pgf_grad, rho_pgf_grad, CS%diag)
+         endif
+      endif
+      if (CS%id_rho_stanley_pgf>0) then
+         do k=1,nz ; do j=js,je
+           call calculate_density(tv%T(:,j,k), tv%S(:,j,k), p_stanley(:,j,k), tv%varT(:,j,k), &
                                zeros, zeros, rho_stanley_pgf(:,j,k), tv%eqn_of_state, EOSdom_h)
-      enddo ; enddo
-      call post_data(CS%id_rho_stanley_pgf, rho_stanley_pgf, CS%diag)
+         enddo; enddo
+         call post_data(CS%id_rho_stanley_pgf, rho_stanley_pgf, CS%diag)
+      endif
     endif
   endif
-
   if (CS%id_MassWt_u>0) call post_data(CS%id_MassWt_u, MassWt_u, CS%diag)
   if (CS%id_MassWt_v>0) call post_data(CS%id_MassWt_v, MassWt_v, CS%diag)
 
-  if (CS%id_rho_pgf>0) call post_data(CS%id_rho_pgf, rho_pgf, CS%diag)
-  if (CS%id_rho_stanley_pgf>0) call post_data(CS%id_rho_stanley_pgf, rho_stanley_pgf, CS%diag)
-  if (CS%id_p_stanley>0) call post_data(CS%id_p_stanley, p_stanley, CS%diag)
+  !if (CS%id_rho_pgf>0) call post_data(CS%id_rho_pgf, rho_pgf, CS%diag)
+  !if (CS%id_rho_stanley_pgf>0) call post_data(CS%id_rho_stanley_pgf, rho_stanley_pgf, CS%diag)
+
 
   ! Diagnostics for tidal forcing and SAL height anomaly
   if (CS%id_e_tide>0) then
@@ -2039,6 +2059,8 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL
   logical :: MassWghtInterpTop ! If true, use near-surface mass weighting for T and S under ice shelves
   logical :: MassWghtInterp_NonBous_bug ! If true, use a buggy mass weighting when non-Boussinesq
   logical :: MassWghtInterpVanOnly ! If true, turn of mass weighting unless one side is vanished
+  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
+                          ! recreate the bugs, or if false bugs are only used if actively selected.
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl  ! This module's name.
@@ -2065,11 +2087,13 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL
                  "gradient forces.  Its inverse is subtracted off of specific volumes when "//&
                  "in non-Boussinesq mode.  The default is RHO_0.", &
                  units="kg m-3", default=GV%Rho0*US%R_to_kg_m3, scale=US%kg_m3_to_R)
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
   call get_param(param_file, mdl, "RHO_PGF_REF_BUG", CS%rho_ref_bug, &
                  "If true, recover a bug that RHO_0 (the mean seawater density in Boussinesq mode) "//&
                  "and RHO_PGF_REF (the subtracted reference density in finite volume pressure "//&
                  "gradient forces) are incorrectly interchanged in several instances in Boussinesq mode.", &
-                 default=.true.)
+                 default=enable_bugs)
   call get_param(param_file, mdl, "TIDES", CS%tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   call get_param(param_file, '', "DEFAULT_ANSWER_DATE", default_answer_date, default=99991231)
@@ -2192,13 +2216,16 @@ subroutine PressureForce_FV_init(Time, G, GV, US, param_file, diag, CS, ADp, SAL
     if (Stanley_coeff < 0.0) call MOM_error(FATAL, &
                  "STANLEY_COEFF must be set >= 0 if USE_STANLEY_PGF is true.")
 
-    CS%id_rho_pgf = register_diag_field('ocean_model', 'rho_pgf', diag%axesTL, &
-        Time, 'rho in PGF', 'kg m-3', conversion=US%R_to_kg_m3)
     CS%id_rho_stanley_pgf = register_diag_field('ocean_model', 'rho_stanley_pgf', diag%axesTL, &
         Time, 'rho in PGF with Stanley correction', 'kg m-3', conversion=US%R_to_kg_m3)
     CS%id_p_stanley = register_diag_field('ocean_model', 'p_stanley', diag%axesTL, &
         Time, 'p in PGF with Stanley correction', 'Pa', conversion=US%RL2_T2_to_Pa)
   endif
+  CS%id_rho_pgf = register_diag_field('ocean_model', 'rho_pgf', diag%axesTL, &
+      Time, 'rho in PGF', 'kg m-3', conversion=US%R_to_kg_m3)
+  CS%id_rho_pgf_grad = register_diag_field('ocean_model', 'rho_pgf_grad', diag%axesTL, &
+      Time, 'rho layer gradient in PGF', 'kg m-4', conversion=US%R_to_kg_m3)
+
   if (CS%calculate_SAL) then
     CS%id_e_sal = register_diag_field('ocean_model', 'e_sal', diag%axesT1, Time, &
         'Self-attraction and loading height anomaly', 'meter', conversion=US%Z_to_m)
