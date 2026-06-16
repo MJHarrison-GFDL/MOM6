@@ -1535,6 +1535,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   integer :: Isdq, Iedq, Jsdq, Jedq, isd, ied, jsd, jed
   integer :: Iscq, Iecq, Jscq, Jecq, isc, iec, jsc, jec
   real    :: err_max, err_tempu, err_tempv, err_init ! Errors in [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
+  real    :: small_ = 1.e-20 !< [R L3 Z T-2 ~> kg m s-2] or [L T-1 ~> m s-1]
   real    :: ew_prev_err  ! Previous outer residual for Eisenstat-Walker CG tolerance (same units as err_max)
   real    :: max_vel  ! The maximum velocity magnitude [L T-1 ~> m s-1]
   real    :: tempu, tempv   ! Temporary variables with velocity magnitudes [L T-1 ~> m s-1]
@@ -1709,7 +1710,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
       call pass_vector(Au, Av, G%domain, TO_ALL, BGRID_NE)
 
-      err_max = 0
+      err_max = small_
 
       do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
         if (CS%umask(I,J) == 1) then
@@ -1726,7 +1727,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
 
     elseif (CS%nonlin_solve_err_mode == 2) then
 
-      err_max=0. ;  max_vel = 0 ; tempu = 0 ; tempv = 0 ; err_tempu = 0
+      err_max=small_ ;  max_vel = 0 ; tempu = 0 ; tempv = 0 ; err_tempu = 0
       do J=G%jscB,G%jecB ; do I=G%iscB,G%iecB
         if (CS%umask(I,J) == 1) then
           err_tempu = ABS(u_last(I,J)-u_shlf(I,J))
@@ -1760,8 +1761,10 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
       err_max = 2.*abs(Norm-PrevNorm) ; err_init = Norm+PrevNorm
     endif
 
-    write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
-    call MOM_mesg(mesg, 5)
+    if (err_init>0.) then
+      write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
+      call MOM_mesg(mesg, 5)
+   endif
 
     if (err_max <= CS%newton_after_tolerance * err_init .and. .not. CS%doing_newton) then
       CS%doing_newton = .true.
@@ -1775,8 +1778,9 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
     ! tolerance scales linearly with the current error (enabling quadratic outer convergence)
     ! without over-tightening at later Newton steps.  The first Newton step uses the standard
     ! cg_tolerance (ratio = 1 on entry).
+    if (ew_prev_err==0.0) ew_prev_err = err_max
     if (CS%doing_newton .and. CS%newton_adapt_cg_tol) then
-      CS%cg_tol_newton = min(CS%cg_tolerance, 0.9 * (err_max / ew_prev_err)**2)
+      CS%cg_tol_newton = min(CS%cg_tolerance, 0.9 * (err_max / max(ew_prev_err,small_))**2)
       ew_prev_err = err_max
     endif
 
@@ -1788,7 +1792,7 @@ subroutine ice_shelf_solve_outer(CS, ISS, G, US, u_shlf, v_shlf, taudx, taudy, i
   CS%doing_newton = .false.
   CS%cg_tol_newton = CS%cg_tolerance
 
-  write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/err_init
+  write(mesg,*) "ice_shelf_solve_outer: nonlinear fractional residual = ", err_max/max(err_init,small_)
   call MOM_mesg(mesg)
   write(mesg,*) "ice_shelf_solve_outer: exiting nonlinear solve after ",iter," iterations"
   call MOM_mesg(mesg)
